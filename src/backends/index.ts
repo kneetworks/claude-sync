@@ -8,6 +8,7 @@ export interface RemoteSession {
 
 export interface Backend {
   push(sessionId: string, encryptedData: Buffer): Promise<void>;
+  pushBatch(sessions: Array<{ id: string; data: Buffer }>, onProgress?: (done: number, total: number) => void): Promise<{ pushed: number; failed: number }>;
   pull(sessionId: string): Promise<Buffer>;
   list(): Promise<RemoteSession[]>;
   delete(sessionId: string): Promise<void>;

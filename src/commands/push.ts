@@ -5,6 +5,8 @@ import { encrypt } from "../crypto/encrypt.js";
 import { getBackend } from "../backends/index.js";
 import { loadConfig } from "../utils/config.js";
 
+const ENCRYPT_BATCH_SIZE = 20; // Parallel encryption batch size
+
 interface PushOptions {
   session?: string;
   file?: string;
@@ -49,34 +51,67 @@ export async function push(options: PushOptions): Promise<void> {
     return;
   }
 
-  const spinner = ora(`Pushing ${sessions.length} session(s)...`).start();
-
-  let pushed = 0;
-  let failed = 0;
-
-  for (const session of sessions) {
+  // For single session, use simple push
+  if (sessions.length === 1) {
+    const spinner = ora("Pushing session...").start();
     try {
-      // Read session data
-      const data = await readSession(session.path);
-
-      // Encrypt
+      const data = await readSession(sessions[0].path);
       const encrypted = await encrypt(data);
-
-      // Push to backend
-      await backend.push(session.id, encrypted);
-
-      pushed++;
-      spinner.text = `Pushed ${pushed}/${sessions.length} sessions...`;
+      await backend.push(sessions[0].id, encrypted);
+      spinner.succeed("Pushed 1 session");
     } catch (error) {
-      failed++;
-      console.error(
-        chalk.red(`\nFailed to push session ${session.id}: ${error}`)
-      );
+      spinner.fail(`Failed to push session: ${error}`);
     }
+    return;
   }
 
-  if (failed > 0) {
-    spinner.warn(`Pushed ${pushed} sessions, ${failed} failed`);
+  // For multiple sessions, use batch mode
+  const spinner = ora(`Encrypting ${sessions.length} sessions...`).start();
+
+  // Step 1: Read and encrypt all sessions in parallel batches
+  const encryptedSessions: Array<{ id: string; data: Buffer }> = [];
+  let encryptFailed = 0;
+
+  for (let i = 0; i < sessions.length; i += ENCRYPT_BATCH_SIZE) {
+    const batch = sessions.slice(i, i + ENCRYPT_BATCH_SIZE);
+
+    const results = await Promise.allSettled(
+      batch.map(async (session) => {
+        const data = await readSession(session.path);
+        const encrypted = await encrypt(data);
+        return { id: session.id, data: encrypted };
+      })
+    );
+
+    for (const result of results) {
+      if (result.status === "fulfilled") {
+        encryptedSessions.push(result.value);
+      } else {
+        encryptFailed++;
+      }
+    }
+
+    spinner.text = `Encrypting... ${encryptedSessions.length + encryptFailed}/${sessions.length}`;
+  }
+
+  if (encryptFailed > 0) {
+    spinner.text = `Encrypted ${encryptedSessions.length} sessions (${encryptFailed} failed)`;
+  }
+
+  // Step 2: Push all encrypted sessions in batch (single commit + push)
+  spinner.text = `Writing ${encryptedSessions.length} sessions...`;
+
+  const { pushed, failed } = await backend.pushBatch(
+    encryptedSessions,
+    (done, total) => {
+      spinner.text = `Writing... ${done}/${total}`;
+    }
+  );
+
+  const totalFailed = failed + encryptFailed;
+
+  if (totalFailed > 0) {
+    spinner.warn(`Pushed ${pushed} sessions, ${totalFailed} failed`);
   } else {
     spinner.succeed(`Pushed ${pushed} session(s)`);
   }

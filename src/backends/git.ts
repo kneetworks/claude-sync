@@ -41,6 +41,8 @@ export async function initGitBackend(url: string): Promise<void> {
   await fs.mkdir(path.join(SYNC_DIR, "sessions"), { recursive: true });
 }
 
+const BATCH_SIZE = 50; // Write files in parallel batches
+
 export function createGitBackend(): Backend {
   const git: SimpleGit = simpleGit(SYNC_DIR);
 
@@ -61,6 +63,55 @@ export function createGitBackend(): Backend {
         // Might need to set upstream
         await git.push(["--set-upstream", "origin", "main"]);
       }
+    },
+
+    async pushBatch(
+      sessions: Array<{ id: string; data: Buffer }>,
+      onProgress?: (done: number, total: number) => void
+    ): Promise<{ pushed: number; failed: number }> {
+      const total = sessions.length;
+      let pushed = 0;
+      let failed = 0;
+
+      // Process in batches for parallel file writes
+      for (let i = 0; i < sessions.length; i += BATCH_SIZE) {
+        const batch = sessions.slice(i, i + BATCH_SIZE);
+
+        // Write all files in this batch in parallel
+        const results = await Promise.allSettled(
+          batch.map(async (session) => {
+            const sessionPath = path.join(SYNC_DIR, "sessions", `${session.id}.enc`);
+            await fs.writeFile(sessionPath, session.data);
+            return sessionPath;
+          })
+        );
+
+        // Count successes/failures
+        for (const result of results) {
+          if (result.status === "fulfilled") {
+            pushed++;
+          } else {
+            failed++;
+          }
+        }
+
+        onProgress?.(pushed + failed, total);
+      }
+
+      // Single git add for all files
+      await git.add(path.join(SYNC_DIR, "sessions", "*.enc"));
+
+      // Single commit
+      await git.commit(`sync: ${pushed} sessions`, { "--allow-empty": null });
+
+      // Single push
+      try {
+        await git.push("origin", "main");
+      } catch {
+        await git.push(["--set-upstream", "origin", "main"]);
+      }
+
+      return { pushed, failed };
     },
 
     async pull(sessionId: string): Promise<Buffer> {
