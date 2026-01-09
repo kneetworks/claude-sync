@@ -15,7 +15,7 @@
     "dev": "tsc --watch",
     "start": "node dist/cli.js",
     "lint": "eslint src",
-    "test": "vitest",
+    "test": "vitest run",
     "prepublishOnly": "pnpm build"
   },
   "keywords": [

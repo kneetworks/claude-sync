@@ -3,6 +3,9 @@
 Sync Claude Code conversations across machines. E2E encrypted, privacy-first.
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
+[![CI](https://github.com/chronicideas/claude-sync/actions/workflows/ci.yml/badge.svg)](https://github.com/chronicideas/claude-sync/actions/workflows/ci.yml)
+
+> **Disclaimer:** This is an independent, community-built tool. It is **not affiliated with, endorsed by, or supported by Anthropic**. Use of Claude Code is subject to [Anthropic's Terms of Service](https://www.anthropic.com/policies/consumer-terms). This tool syncs conversation data that may contain sensitive information—ensure compliance with your organization's data policies before use.
 
 ## The Problem
 
@@ -116,18 +119,60 @@ Just run `claude-sync init` without flags for an interactive wizard that guides 
 
 ## Security
 
-### Encryption
+### Threat Model
 
-- **Algorithm**: AES-256-GCM (authenticated encryption)
-- **Key**: 256-bit randomly generated, stored locally at `~/.claude-sync/key`
-- **What's encrypted**: Session transcripts (JSONL files)
-- **Validation**: Data is verified as encrypted before every push (prevents accidental plaintext exposure)
+**What claude-sync protects against:**
+
+- **Storage provider reading your data** - Sessions are encrypted before leaving your machine. Your Git host, S3 provider, etc. cannot read the content.
+- **Network interception** - Even if TLS were compromised, the payload is already encrypted.
+- **Accidental plaintext exposure** - Every push validates data is encrypted before upload.
+
+**What claude-sync does NOT protect against:**
+
+- **Compromised local machine** - If an attacker has access to your machine, they can read `~/.claude-sync/key` and decrypt everything.
+- **Key theft** - Anyone with your encryption key can decrypt all your sessions.
+- **Metadata exposure** - Session IDs, file sizes, and sync timestamps are visible to your storage provider.
+- **Memory attacks** - Decrypted data exists in memory during processing.
+- **Weak storage credentials** - If your Git/S3/GCS credentials are compromised, attackers get encrypted blobs (safe) but could delete your data.
+
+**Trust assumptions:**
+
+- You trust your local machine's security
+- You trust Node.js `crypto.randomBytes()` for key and IV generation
+- You trust AES-256-GCM as implemented in Node.js/OpenSSL
+
+### Cryptographic Details
+
+| Component | Implementation |
+|-----------|----------------|
+| **Algorithm** | AES-256-GCM (authenticated encryption with associated data) |
+| **Key** | 256-bit, generated via `crypto.randomBytes(32)` |
+| **IV/Nonce** | 96-bit (12 bytes), unique per encryption via `crypto.randomBytes(12)` |
+| **Auth Tag** | 128-bit (16 bytes), provides integrity and authenticity |
+| **Format** | `IV (12 bytes) || AuthTag (16 bytes) || Ciphertext` |
+| **Key Storage** | `~/.claude-sync/key` with mode `0600` (owner read/write only) |
+| **Config Dir** | `~/.claude-sync/` with mode `0700` (owner only) |
+
+**Security properties:**
+
+- **Confidentiality** - AES-256 encryption prevents reading without the key
+- **Integrity** - GCM auth tag detects any tampering with ciphertext
+- **Authenticity** - Only someone with the key could have produced valid ciphertext
+- **No nonce reuse** - Fresh random IV for every encryption operation
+
+**Not implemented (potential future work):**
+
+- Key rotation mechanism
+- Key derivation from password (currently raw key only)
+- Forward secrecy
+- Audit logging
 
 ### Your Responsibilities
 
 1. **Back up your key** - Without it, you cannot decrypt your sessions
 2. **Use private storage** - The encrypted data is safe, but why expose it?
 3. **Protect your machines** - Anyone with access to `~/.claude-sync/key` can decrypt
+4. **Check your company policy** - Claude Code sessions may contain proprietary code, incident context, or customer info
 
 ### Key Backup
 
