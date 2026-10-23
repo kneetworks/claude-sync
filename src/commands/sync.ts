@@ -5,7 +5,7 @@ import { homedir } from "os";
 import ora from "ora";
 import chalk from "chalk";
 import { encrypt, decryptBuffer } from "../crypto/encrypt.js";
-import { getBackend } from "../backends/index.js";
+import { getBackend, type Backend } from "../backends/index.js";
 import { loadConfig } from "../utils/config.js";
 import { loadManifest, saveManifest } from "../utils/manifest.js";
 import { acquireLock } from "../utils/lock.js";
@@ -80,6 +80,22 @@ async function writeFileAtomic(file: string, data: Buffer): Promise<void> {
   }
 }
 
+/**
+ * Download and decrypt one remote file. Failing to decrypt means this machine has a
+ * different key, which is fatal: pushing on regardless would mix keys in the storage.
+ */
+async function fetchRemote(backend: Backend, remotePath: string): Promise<Buffer> {
+  const encrypted = await backend.get(remotePath);
+  try {
+    return await decryptBuffer(encrypted);
+  } catch {
+    throw new Error(
+      `Can't decrypt ${remotePath}: this machine's key doesn't match the one it was ` +
+        "pushed with. Import the key from your other machine: claude-sync key import <base64>"
+    );
+  }
+}
+
 async function saveConflict(remotePath: string, data: Buffer): Promise<string> {
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
   const { dir, name, ext } = path.parse(path.join(CONFLICTS_DIR, ...remotePath.split("/")));
@@ -143,10 +159,11 @@ async function run(options: SyncOptions, push: boolean): Promise<void> {
         options.all && !(await fs.access(localPath).then(() => true, () => false));
       if (entry?.v === file.version && !restoreMissing) continue;
 
+      const remote = await fetchRemote(backend, file.path);
+
       // One unwritable file (e.g. a path too long for this machine) shouldn't stop
       // the rest; it stays out of the manifest so the next sync retries it
       try {
-        const remote = await decryptBuffer(await backend.get(file.path));
         const resolution = resolve(await readIfExists(localPath), remote, entry?.h);
 
         if (resolution === "take-remote") {
@@ -208,7 +225,7 @@ async function run(options: SyncOptions, push: boolean): Promise<void> {
         // Pull skipped this file (live session) but the remote copy has moved on
         const remoteVersion = remoteVersions.get(file.remotePath);
         if (remoteVersion && remoteVersion !== entry?.v) {
-          const remote = await decryptBuffer(await backend.get(file.remotePath));
+          const remote = await fetchRemote(backend, file.remotePath);
           const resolution = resolve(data, remote, entry?.h);
 
           if (resolution === "same") {

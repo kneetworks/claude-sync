@@ -19,7 +19,7 @@ Claude Code stores conversations locally. When you switch machines, your convers
 - **Your storage** - Use your own private Git repo, AWS S3, Google Cloud Storage, Cloudflare R2, or any S3-compatible service
 - **Zero trust** - We never see your conversations or encryption keys
 - **Automatic** - Hooks into Claude Code's session lifecycle
-- **Fast** - Parallel encryption and batch uploads
+- **Incremental** - Only files changed since the last sync are uploaded, in one commit per sync
 
 ## Quick Start
 
@@ -240,7 +240,7 @@ With `--hook`, claude-sync reads the session ID Claude Code passes on stdin, pri
 ## Setting Up on a New Machine
 
 1. Clone your project to the same place relative to your home directory (e.g. `~/Workspace/app`)
-2. Install claude-sync (see [Development](#development) to build from source)
+2. Install claude-sync: `npm install -g @chronicideas/claude-sync`
 3. Initialize with the same backend and your existing key:
    ```bash
    # On your existing machine
@@ -261,11 +261,14 @@ Then open Claude Code in the project and run `/resume`.
 git clone https://github.com/kneetworks/claude-sync
 cd claude-sync
 
-# Install dependencies
-pnpm install
+# Install dependencies (npx runs pnpm without installing it globally)
+npx pnpm@9.15.0 install --frozen-lockfile
 
 # Build
-pnpm build
+npx pnpm@9.15.0 build
+
+# Test
+npx pnpm@9.15.0 test
 
 # Run locally
 node dist/cli.js status

@@ -3,6 +3,7 @@ import ora from "ora";
 import chalk from "chalk";
 import { generateKey, importKey, keyExists, saveKey } from "../crypto/keys.js";
 import { initGitBackend } from "../backends/git.js";
+import { getBackend } from "../backends/index.js";
 import { saveConfig } from "../utils/config.js";
 
 interface InitOptions {
@@ -173,26 +174,6 @@ export async function init(options: InitOptions): Promise<void> {
     }
   }
 
-  // Set up the encryption key. Never replace an existing one: everything already
-  // pushed with it would become unreadable.
-  const spinner = ora("Setting up encryption key...").start();
-
-  try {
-    if (options.key) {
-      await importKey(options.key.trim());
-      spinner.succeed("Encryption key imported");
-    } else if (await keyExists()) {
-      spinner.succeed("Using existing encryption key");
-    } else {
-      const key = await generateKey();
-      await saveKey(key);
-      spinner.succeed("Encryption key generated and saved");
-    }
-  } catch (error) {
-    spinner.fail("Failed to set up encryption key");
-    throw error;
-  }
-
   // Initialize backend
   const backendSpinner = ora(`Setting up ${backend} backend...`).start();
 
@@ -205,6 +186,40 @@ export async function init(options: InitOptions): Promise<void> {
     backendSpinner.succeed(`${backend} backend configured`);
   } catch (error) {
     backendSpinner.fail(`Failed to set up ${backend} backend`);
+    throw error;
+  }
+
+  // Set up the encryption key. Never replace an existing one: everything already
+  // pushed with it would become unreadable.
+  const spinner = ora("Setting up encryption key...").start();
+
+  try {
+    if (options.key) {
+      await importKey(options.key.trim());
+      spinner.succeed("Encryption key imported");
+    } else if (await keyExists()) {
+      spinner.succeed("Using existing encryption key");
+    } else {
+      // A fresh key can't read what another machine already pushed
+      const remote = await getBackend({ backend, backendConfig, initialized: true, createdAt: "" });
+      if ((await remote.list()).length > 0) {
+        spinner.fail("This storage already has synced sessions");
+        console.log(
+          chalk.dim("Run init again with ") +
+            chalk.cyan("--key <base64>") +
+            chalk.dim(", using the key from your other machine (") +
+            chalk.cyan("claude-sync key export") +
+            chalk.dim(")\n")
+        );
+        process.exit(1);
+      }
+
+      const key = await generateKey();
+      await saveKey(key);
+      spinner.succeed("Encryption key generated and saved");
+    }
+  } catch (error) {
+    spinner.fail("Failed to set up encryption key");
     throw error;
   }
 
