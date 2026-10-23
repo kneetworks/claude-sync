@@ -1,7 +1,7 @@
 import inquirer from "inquirer";
 import ora from "ora";
 import chalk from "chalk";
-import { generateKey, saveKey } from "../crypto/keys.js";
+import { generateKey, importKey, keyExists, saveKey } from "../crypto/keys.js";
 import { initGitBackend } from "../backends/git.js";
 import { saveConfig } from "../utils/config.js";
 
@@ -12,6 +12,7 @@ interface InitOptions {
   r2?: string;
   region?: string;
   endpoint?: string;
+  key?: string;
 }
 
 // Common S3-compatible endpoints
@@ -172,15 +173,23 @@ export async function init(options: InitOptions): Promise<void> {
     }
   }
 
-  // Generate encryption key
-  const spinner = ora("Generating encryption key...").start();
+  // Set up the encryption key. Never replace an existing one: everything already
+  // pushed with it would become unreadable.
+  const spinner = ora("Setting up encryption key...").start();
 
   try {
-    const key = await generateKey();
-    await saveKey(key);
-    spinner.succeed("Encryption key generated and saved");
+    if (options.key) {
+      await importKey(options.key.trim());
+      spinner.succeed("Encryption key imported");
+    } else if (await keyExists()) {
+      spinner.succeed("Using existing encryption key");
+    } else {
+      const key = await generateKey();
+      await saveKey(key);
+      spinner.succeed("Encryption key generated and saved");
+    }
   } catch (error) {
-    spinner.fail("Failed to generate encryption key");
+    spinner.fail("Failed to set up encryption key");
     throw error;
   }
 
@@ -211,11 +220,13 @@ export async function init(options: InitOptions): Promise<void> {
   console.log("Next steps:");
   console.log(
     chalk.dim("  1. Run ") +
-      chalk.cyan("claude-sync install") +
-      chalk.dim(" to add hooks to Claude Code")
+      chalk.cyan("claude-sync sync") +
+      chalk.dim(" for the first sync (it can take a while)")
   );
   console.log(
-    chalk.dim("  2. Your sessions will now sync automatically\n")
+    chalk.dim("  2. Run ") +
+      chalk.cyan("claude-sync install") +
+      chalk.dim(" to add hooks to Claude Code\n")
   );
 
   // Security reminder
@@ -226,6 +237,8 @@ export async function init(options: InitOptions): Promise<void> {
     )
   );
   console.log(
-    chalk.dim("   Back it up safely - without it, you cannot decrypt your sessions\n")
+    chalk.dim("   Back it up with ") +
+      chalk.cyan("claude-sync key export") +
+      chalk.dim(" - without it, you cannot decrypt your sessions\n")
   );
 }

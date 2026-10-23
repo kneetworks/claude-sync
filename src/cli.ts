@@ -2,10 +2,10 @@
 
 import { Command } from "commander";
 import { init } from "./commands/init.js";
-import { push } from "./commands/push.js";
-import { pull } from "./commands/pull.js";
+import { sync, pull } from "./commands/sync.js";
 import { install } from "./commands/install.js";
 import { status } from "./commands/status.js";
+import { keyExport, keyImport } from "./commands/key.js";
 
 const program = new Command();
 
@@ -25,21 +25,24 @@ program
   .option("--r2 <bucket>", "Use Cloudflare R2 bucket")
   .option("--region <region>", "AWS/S3 region")
   .option("--endpoint <url>", "Custom S3 endpoint URL")
+  .option("--key <base64>", "Use the encryption key from your other machine")
   .action(init);
 
 program
+  .command("sync")
+  .description("Pull remote changes, then push local changes")
+  .option("--hook", "Run from a Claude Code hook (quiet, never fails the session)")
+  .action(sync);
+
+program
   .command("push")
-  .description("Push local sessions to cloud storage")
-  .option("--session <id>", "Push a specific session")
-  .option("--file <path>", "Push a specific transcript file")
-  .option("--all", "Push all sessions")
-  .action(push);
+  .description("Same as sync: remote changes are always pulled first")
+  .action(sync);
 
 program
   .command("pull")
-  .description("Pull sessions from cloud storage")
-  .option("--session <id>", "Pull a specific session")
-  .option("--all", "Pull all sessions")
+  .description("Pull remote changes without pushing")
+  .option("--all", "Also restore files deleted locally after they were synced")
   .action(pull);
 
 program
@@ -54,4 +57,19 @@ program
   .description("Show sync status and configuration")
   .action(status);
 
-program.parse();
+const key = program.command("key").description("Back up or restore the encryption key");
+
+key
+  .command("export")
+  .description("Print the key as base64 (keep it secret)")
+  .action(keyExport);
+
+key
+  .command("import <base64>")
+  .description("Use the key from your other machine")
+  .action(keyImport);
+
+program.parseAsync().then(() => {
+  // Hooks must exit promptly rather than wait on open handles
+  if (process.argv.includes("--hook")) process.exit(0);
+});

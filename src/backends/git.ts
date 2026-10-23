@@ -1,163 +1,115 @@
-import simpleGit, { SimpleGit } from "simple-git";
+import simpleGit, { CheckRepoActions, SimpleGit } from "simple-git";
 import fs from "fs/promises";
 import path from "path";
 import { homedir } from "os";
-import type { Backend, RemoteSession } from "./index.js";
+import type { Backend, RemoteFile } from "./index.js";
 import { assertEncrypted } from "../crypto/encrypt.js";
 
 const SYNC_DIR = path.join(homedir(), ".claude-sync", "repo");
+const FILES_DIR = "projects";
+const BRANCH = "main";
+
+function repoGit(): SimpleGit {
+  // Fail instead of hanging a Claude Code hook on a credentials prompt
+  return simpleGit(SYNC_DIR).env({ ...process.env, GIT_TERMINAL_PROMPT: "0" });
+}
 
 export async function initGitBackend(url: string): Promise<void> {
   await fs.mkdir(SYNC_DIR, { recursive: true });
 
-  const git: SimpleGit = simpleGit(SYNC_DIR);
-
-  // Check if already initialized
+  const git = repoGit();
   const isRepo = await git
-    .checkIsRepo()
+    .checkIsRepo(CheckRepoActions.IS_REPO_ROOT)
     .catch(() => false);
 
   if (isRepo) {
-    // Verify remote matches
-    const remotes = await git.getRemotes(true);
-    const origin = remotes.find((r) => r.name === "origin");
-    if (origin?.refs.fetch !== url) {
-      await git.remote(["set-url", "origin", url]);
-    }
-    await git.pull("origin", "main").catch(() => {
-      // Might be empty repo, that's fine
-    });
+    await git.remote(["set-url", "origin", url]);
   } else {
-    // Clone or init
-    try {
-      await simpleGit().clone(url, SYNC_DIR);
-    } catch {
-      // Empty repo, init locally
-      await git.init();
-      await git.addRemote("origin", url);
-    }
+    await git.init();
+    await git.addRemote("origin", url);
   }
 
-  // Create sessions directory
-  await fs.mkdir(path.join(SYNC_DIR, "sessions"), { recursive: true });
+  // Subagent transcripts under long project names can pass Windows' 260-char limit
+  await git.addConfig("core.longpaths", "true");
+  await git.addConfig("user.name", "claude-sync");
+  await git.addConfig("user.email", "claude-sync@localhost");
+  await git.raw(["symbolic-ref", "HEAD", `refs/heads/${BRANCH}`]);
+
+  // Surface a wrong URL or missing credentials now rather than inside a hook
+  await git.fetch("origin");
 }
 
-const BATCH_SIZE = 50; // Write files in parallel batches
+/**
+ * Map each file under FILES_DIR at HEAD to its blob id
+ */
+async function listTree(git: SimpleGit): Promise<Map<string, string>> {
+  const tree = await git.raw(["ls-tree", "-r", "-z", "HEAD", "--", FILES_DIR]);
+  const files = new Map<string, string>();
+
+  for (const entry of tree.split("\0")) {
+    // "<mode> <type> <object>\t<path>"
+    const [meta, filePath] = entry.split("\t");
+    if (!filePath?.endsWith(".enc")) continue;
+    files.set(filePath.slice(FILES_DIR.length + 1, -".enc".length), meta.split(" ")[2]);
+  }
+
+  return files;
+}
 
 export function createGitBackend(): Backend {
-  const git: SimpleGit = simpleGit(SYNC_DIR);
+  const git = repoGit();
+  const staged = new Set<string>();
+
+  const filePath = (remotePath: string) =>
+    path.join(SYNC_DIR, FILES_DIR, `${remotePath}.enc`);
 
   return {
-    async push(sessionId: string, encryptedData: Buffer): Promise<void> {
+    async list(): Promise<RemoteFile[]> {
+      // The clone is only a cache: start from exactly what the remote has, dropping
+      // anything left over from a run whose push failed
+      await git.fetch("origin");
+      const remoteHead = await git
+        .raw(["rev-parse", "--verify", "--quiet", `refs/remotes/origin/${BRANCH}`])
+        .catch(() => "");
+
+      if (!remoteHead.trim()) return [];
+
+      await git.raw(["reset", "--hard", `origin/${BRANCH}`]);
+      await git.raw(["clean", "-fdq"]);
+
+      const files = await listTree(git);
+      return [...files].map(([p, version]) => ({ path: p, version }));
+    },
+
+    async get(remotePath: string): Promise<Buffer> {
+      return fs.readFile(filePath(remotePath));
+    },
+
+    async put(remotePath: string, encryptedData: Buffer): Promise<void> {
       // Verify data is encrypted before writing
-      assertEncrypted(encryptedData, `session ${sessionId}`);
+      assertEncrypted(encryptedData, remotePath);
 
-      const sessionPath = path.join(SYNC_DIR, "sessions", `${sessionId}.enc`);
-
-      // Write encrypted data
-      await fs.writeFile(sessionPath, encryptedData);
-
-      // Commit and push
-      await git.add(sessionPath);
-      await git.commit(`sync: ${sessionId}`, { "--allow-empty": null });
-
-      try {
-        await git.push("origin", "main");
-      } catch {
-        // Might need to set upstream
-        await git.push(["--set-upstream", "origin", "main"]);
-      }
+      await fs.mkdir(path.dirname(filePath(remotePath)), { recursive: true });
+      await fs.writeFile(filePath(remotePath), encryptedData);
+      staged.add(remotePath);
     },
 
-    async pushBatch(
-      sessions: Array<{ id: string; data: Buffer }>,
-      onProgress?: (done: number, total: number) => void
-    ): Promise<{ pushed: number; failed: number }> {
-      const total = sessions.length;
-      let pushed = 0;
-      let failed = 0;
+    async commit(message: string): Promise<Map<string, string>> {
+      const versions = new Map<string, string>();
+      if (staged.size === 0) return versions;
 
-      // Process in batches for parallel file writes
-      for (let i = 0; i < sessions.length; i += BATCH_SIZE) {
-        const batch = sessions.slice(i, i + BATCH_SIZE);
+      await git.raw(["add", "-A", "--", FILES_DIR]);
+      await git.commit(message);
+      await git.push("origin", `HEAD:refs/heads/${BRANCH}`);
 
-        // Write all files in this batch in parallel
-        const results = await Promise.allSettled(
-          batch.map(async (session) => {
-            // Verify each session is encrypted before writing
-            assertEncrypted(session.data, `session ${session.id}`);
-
-            const sessionPath = path.join(SYNC_DIR, "sessions", `${session.id}.enc`);
-            await fs.writeFile(sessionPath, session.data);
-            return sessionPath;
-          })
-        );
-
-        // Count successes/failures
-        for (const result of results) {
-          if (result.status === "fulfilled") {
-            pushed++;
-          } else {
-            failed++;
-          }
-        }
-
-        onProgress?.(pushed + failed, total);
+      const files = await listTree(git);
+      for (const remotePath of staged) {
+        const version = files.get(remotePath);
+        if (version) versions.set(remotePath, version);
       }
 
-      // Single git add for all files
-      await git.add(path.join(SYNC_DIR, "sessions", "*.enc"));
-
-      // Single commit
-      await git.commit(`sync: ${pushed} sessions`, { "--allow-empty": null });
-
-      // Single push
-      try {
-        await git.push("origin", "main");
-      } catch {
-        await git.push(["--set-upstream", "origin", "main"]);
-      }
-
-      return { pushed, failed };
-    },
-
-    async pull(sessionId: string): Promise<Buffer> {
-      // Pull latest
-      await git.pull("origin", "main").catch(() => {
-        // Might fail if nothing to pull
-      });
-
-      const sessionPath = path.join(SYNC_DIR, "sessions", `${sessionId}.enc`);
-      return fs.readFile(sessionPath);
-    },
-
-    async list(): Promise<RemoteSession[]> {
-      // Pull latest
-      await git.pull("origin", "main").catch(() => {});
-
-      const sessionsDir = path.join(SYNC_DIR, "sessions");
-
-      try {
-        const files = await fs.readdir(sessionsDir);
-        return files
-          .filter((f) => f.endsWith(".enc"))
-          .map((f) => ({
-            id: f.replace(".enc", ""),
-            project: "unknown", // TODO: Store project metadata
-            existsLocally: false, // TODO: Check local sessions
-          }));
-      } catch {
-        return [];
-      }
-    },
-
-    async delete(sessionId: string): Promise<void> {
-      const sessionPath = path.join(SYNC_DIR, "sessions", `${sessionId}.enc`);
-
-      await fs.unlink(sessionPath).catch(() => {});
-      await git.add(sessionPath);
-      await git.commit(`delete: ${sessionId}`);
-      await git.push("origin", "main");
+      staged.clear();
+      return versions;
     },
   };
 }

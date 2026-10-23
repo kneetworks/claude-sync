@@ -63,15 +63,36 @@ claude-sync install --global
 └─────────────────────────────────────────────┘
 ```
 
+### What gets synced
+
+Everything Claude Code keeps per project under `~/.claude/projects/<project>/`: session transcripts, subagent transcripts, tool results and the project's memory folder. Each file is encrypted separately, and only files that changed since the last sync are uploaded.
+
+### Restoring into the right project
+
+Claude Code names each project folder after the project's absolute path (`C:\Users\me\code\app` → `C--Users-me-code-app`), and `/resume` only lists sessions from the folder that matches your current directory. claude-sync stores the home-directory part as `@home` (`@home-code-app`) and expands it with the local home directory when pulling, so a project kept at the same place relative to your home directory lands in the right folder on every machine, even with a different username or OS.
+
+### Conflicts
+
+Every sync pulls before it pushes, so a push never silently overwrites another machine's work:
+
+- If one copy of a transcript extends the other (the normal case), the longer one wins.
+- If only one side changed a file since the last sync, that side wins.
+- If both sides changed it (for example, the same session continued on two machines between syncs), the local copy is kept and the other copy is saved to `~/.claude-sync/conflicts/`.
+
+The session that is currently open is never overwritten by a hook; it is reconciled on the next sync after it closes. Deletions are not synced, so Claude Code's cleanup of old transcripts on one machine doesn't remove them anywhere else.
+
 ## Commands
 
 | Command | Description |
 |---------|-------------|
-| `claude-sync init` | Set up storage backend and generate encryption key |
+| `claude-sync init` | Set up storage backend and encryption key (`--key <base64>` to reuse your other machine's) |
+| `claude-sync sync` | Pull remote changes, then push local changes |
+| `claude-sync push` | Same as `sync` |
+| `claude-sync pull` | Pull only (`--all` also restores files deleted locally) |
 | `claude-sync install` | Add hooks to Claude Code for automatic sync |
-| `claude-sync push` | Manually push sessions to remote |
-| `claude-sync pull` | Manually pull sessions from remote |
 | `claude-sync status` | Show configuration and sync status |
+| `claude-sync key export` | Print the encryption key as base64 |
+| `claude-sync key import <base64>` | Use an existing encryption key |
 
 ## Storage Backends
 
@@ -177,55 +198,61 @@ Just run `claude-sync init` without flags for an interactive wizard that guides 
 ### Key Backup
 
 ```bash
-# Export your key (store this somewhere safe!)
-cat ~/.claude-sync/key | base64
+# Export your key (store this somewhere safe, e.g. a password manager)
+claude-sync key export
 
 # Import on another machine
-echo "YOUR_BASE64_KEY" | base64 -d > ~/.claude-sync/key
-chmod 600 ~/.claude-sync/key
+claude-sync key import YOUR_BASE64_KEY
 ```
+
+`claude-sync init` never replaces an existing key, since everything already pushed with it would become unreadable.
 
 ## How Claude Code Hooks Work
 
-`claude-sync install` adds these hooks to your Claude Code settings:
+`claude-sync install` adds these hooks to your Claude Code settings, using absolute paths to `node` and the CLI so they work whatever `PATH` Claude Code runs them with:
 
 ```json
 {
   "hooks": {
-    "SessionEnd": [{
-      "hooks": [{
-        "type": "command",
-        "command": "claude-sync push --session $CLAUDE_SESSION_ID"
-      }]
-    }],
     "SessionStart": [{
       "hooks": [{
         "type": "command",
-        "command": "claude-sync pull"
+        "command": "\"/path/to/node\" \"/path/to/claude-sync/dist/cli.js\" sync --hook",
+        "timeout": 120
+      }]
+    }],
+    "SessionEnd": [{
+      "hooks": [{
+        "type": "command",
+        "command": "\"/path/to/node\" \"/path/to/claude-sync/dist/cli.js\" sync --hook",
+        "timeout": 120
       }]
     }]
   }
 }
 ```
 
-- **SessionEnd**: When you finish a conversation, it's encrypted and pushed
-- **SessionStart**: When you start Claude Code, new sessions are pulled
+- **SessionStart**: Picks up work from your other machines (and pushes anything a previous session left behind)
+- **SessionEnd**: Pushes the conversation you just finished
+
+With `--hook`, claude-sync reads the session ID Claude Code passes on stdin, prints nothing to stdout (SessionStart output would be added to Claude's context), and never fails the session: errors go to stderr. Re-running `claude-sync install` replaces earlier claude-sync hooks and keeps your other hooks.
 
 ## Setting Up on a New Machine
 
-1. Install claude-sync: `npm install -g @chronicideas/claude-sync`
-2. Initialize with the same backend: `claude-sync init --git <same-repo>`
-3. Copy your encryption key from your other machine:
+1. Clone your project to the same place relative to your home directory (e.g. `~/Workspace/app`)
+2. Install claude-sync (see [Development](#development) to build from source)
+3. Initialize with the same backend and your existing key:
    ```bash
-   # On old machine
-   cat ~/.claude-sync/key | base64
+   # On your existing machine
+   claude-sync key export
 
-   # On new machine
-   echo "BASE64_KEY" | base64 -d > ~/.claude-sync/key
-   chmod 600 ~/.claude-sync/key
+   # On the new machine
+   claude-sync init --git <same-repo> --key <base64-key>
    ```
-4. Pull existing sessions: `claude-sync pull --all`
+4. Pull existing sessions: `claude-sync sync`
 5. Install hooks: `claude-sync install --global`
+
+Then open Claude Code in the project and run `/resume`.
 
 ## Development
 

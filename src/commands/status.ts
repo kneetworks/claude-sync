@@ -1,6 +1,8 @@
+import fs from "fs/promises";
 import chalk from "chalk";
 import { loadConfig } from "../utils/config.js";
-import { findSessions } from "../utils/sessions.js";
+import { loadManifest } from "../utils/manifest.js";
+import { findLocalFiles } from "../utils/sessions.js";
 import { keyExists } from "../crypto/keys.js";
 
 export async function status(): Promise<void> {
@@ -41,14 +43,27 @@ export async function status(): Promise<void> {
   }
   console.log();
 
-  // Session counts
-  console.log(chalk.bold("Sessions:"));
+  // Local files
+  console.log(chalk.bold("Local files:"));
   try {
-    const allSessions = await findSessions();
-    const pendingSessions = await findSessions({ modifiedSinceLastSync: true });
+    const files = await findLocalFiles();
+    const manifest = await loadManifest();
 
-    console.log(`  Local sessions: ${allSessions.length}`);
-    console.log(`  Pending sync: ${pendingSessions.length}`);
+    let changed = 0;
+    for (const file of files) {
+      const entry = manifest[file.remotePath];
+      const stat = await fs.stat(file.absPath);
+      if (!entry || entry.size !== stat.size || entry.mtime !== stat.mtimeMs) changed++;
+    }
+
+    // Top-level transcripts only; subagent transcripts live in per-session folders
+    const sessions = files.filter((f) => /^[^/]+\/[^/]+\.jsonl$/.test(f.remotePath));
+    const projects = new Set(files.map((f) => f.remotePath.split("/")[0]));
+
+    console.log(`  Projects: ${projects.size}`);
+    console.log(`  Sessions: ${sessions.length}`);
+    console.log(`  Files: ${files.length}`);
+    console.log(`  Changed since last sync: ${changed}`);
   } catch {
     console.log(chalk.dim("  Unable to read sessions"));
   }

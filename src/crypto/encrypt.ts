@@ -6,13 +6,33 @@ const IV_LENGTH = 12;
 const AUTH_TAG_LENGTH = 16;
 const MIN_ENCRYPTED_SIZE = IV_LENGTH + AUTH_TAG_LENGTH + 1; // At least 1 byte of ciphertext
 
+// First bytes that make isEncrypted() treat data as plaintext
+const PLAINTEXT_INDICATORS = [
+  0x7b, // {
+  0x5b, // [
+  0x22, // "
+  0x23, // #
+];
+
+/**
+ * Random IV whose first byte can't be mistaken for plaintext. Without this,
+ * ~1.6% of ciphertexts (4 in 256) would fail the pre-push safety check.
+ */
+function randomIv(): Buffer {
+  let iv = randomBytes(IV_LENGTH);
+  while (PLAINTEXT_INDICATORS.includes(iv[0])) {
+    iv = randomBytes(IV_LENGTH);
+  }
+  return iv;
+}
+
 /**
  * Encrypt data using AES-256-GCM
  * Returns: IV (12 bytes) + Auth Tag (16 bytes) + Ciphertext
  */
 export async function encrypt(data: string | Buffer): Promise<Buffer> {
   const key = await loadKey();
-  const iv = randomBytes(IV_LENGTH);
+  const iv = randomIv();
 
   const cipher = createCipheriv(ALGORITHM, key, iv, {
     authTagLength: AUTH_TAG_LENGTH,
@@ -31,6 +51,13 @@ export async function encrypt(data: string | Buffer): Promise<Buffer> {
  * Decrypt data encrypted with encrypt()
  */
 export async function decrypt(encryptedData: Buffer): Promise<string> {
+  return (await decryptBuffer(encryptedData)).toString("utf-8");
+}
+
+/**
+ * Decrypt data encrypted with encrypt(), returning the raw bytes
+ */
+export async function decryptBuffer(encryptedData: Buffer): Promise<Buffer> {
   const key = await loadKey();
 
   // Extract components
@@ -44,19 +71,14 @@ export async function decrypt(encryptedData: Buffer): Promise<string> {
 
   decipher.setAuthTag(authTag);
 
-  const decrypted = Buffer.concat([
-    decipher.update(ciphertext),
-    decipher.final(),
-  ]);
-
-  return decrypted.toString("utf-8");
+  return Buffer.concat([decipher.update(ciphertext), decipher.final()]);
 }
 
 /**
  * Encrypt with a specific key (for testing or key rotation)
  */
 export function encryptWithKey(data: string | Buffer, key: Buffer): Buffer {
-  const iv = randomBytes(IV_LENGTH);
+  const iv = randomIv();
 
   const cipher = createCipheriv(ALGORITHM, key, iv, {
     authTagLength: AUTH_TAG_LENGTH,
@@ -105,15 +127,7 @@ export function isEncrypted(data: Buffer): boolean {
 
   // Check it's not plain text (JSONL sessions start with '{')
   // If the first byte is a printable ASCII char that's common in JSON, it's likely not encrypted
-  const firstByte = data[0];
-  const plainTextIndicators = [
-    0x7b, // {
-    0x5b, // [
-    0x22, // "
-    0x23, // #
-  ];
-
-  if (plainTextIndicators.includes(firstByte)) {
+  if (PLAINTEXT_INDICATORS.includes(data[0])) {
     return false;
   }
 

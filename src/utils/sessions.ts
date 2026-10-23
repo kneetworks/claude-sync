@@ -1,82 +1,100 @@
-import fs from "fs/promises";
 import path from "path";
 import { homedir } from "os";
 import { glob } from "glob";
 
-const CLAUDE_DIR = path.join(homedir(), ".claude");
-const PROJECTS_DIR = path.join(CLAUDE_DIR, "projects");
+/** Stands in for the home directory in remote paths */
+const HOME_TOKEN = "@home";
 
-interface Session {
-  id: string;
-  path: string;
-  project: string;
-  modifiedAt: Date;
+export interface LocalFile {
+  /** Portable path used as the remote key, e.g. "@home-Workspace-app/<session>.jsonl" */
+  remotePath: string;
+  absPath: string;
 }
 
-interface FindOptions {
-  modifiedSinceLastSync?: boolean;
+function projectsDir(home: string): string {
+  return path.join(home, ".claude", "projects");
 }
 
 /**
- * Find all Claude Code sessions on this machine
+ * Claude Code names each project folder after the project's absolute path, with every
+ * non-alphanumeric character replaced by "-" (C:\Users\me\app -> C--Users-me-app).
  */
-export async function findSessions(options?: FindOptions): Promise<Session[]> {
-  const pattern = path.join(PROJECTS_DIR, "**", "*.jsonl");
-  const files = await glob(pattern);
+export function encodeProjectDir(absPath: string): string {
+  return absPath.replace(/[^a-zA-Z0-9]/g, "-");
+}
 
-  const sessions: Session[] = [];
+/**
+ * Replace the home-directory part of a project folder name with a token, so a project
+ * kept at the same place relative to home maps to the same remote path on every
+ * machine, whatever the username or OS.
+ */
+export function toPortableProject(projectDir: string, home = homedir()): string {
+  const encodedHome = encodeProjectDir(home);
+  const rest = projectDir.slice(encodedHome.length);
+  const underHome =
+    projectDir.toLowerCase().startsWith(encodedHome.toLowerCase()) &&
+    (rest === "" || rest.startsWith("-"));
+  return underHome ? HOME_TOKEN + rest : projectDir;
+}
 
-  for (const filePath of files) {
-    const stat = await fs.stat(filePath);
-    const id = path.basename(filePath, ".jsonl");
-
-    // Extract project from path
-    const relativePath = path.relative(PROJECTS_DIR, filePath);
-    const project = path.dirname(relativePath);
-
-    sessions.push({
-      id,
-      path: filePath,
-      project,
-      modifiedAt: stat.mtime,
-    });
+/**
+ * Inverse of toPortableProject() for this machine's home directory
+ */
+export function toLocalProject(portable: string, home = homedir()): string {
+  if (portable === HOME_TOKEN || portable.startsWith(`${HOME_TOKEN}-`)) {
+    return encodeProjectDir(home) + portable.slice(HOME_TOKEN.length);
   }
-
-  if (options?.modifiedSinceLastSync) {
-    // TODO: Compare with last sync timestamp
-    // For now, return all
-    return sessions;
-  }
-
-  return sessions;
+  return portable;
 }
 
 /**
- * Read a session transcript file
+ * Remote paths come from storage, so refuse anything that could escape the projects folder
  */
-export async function readSession(sessionPath: string): Promise<string> {
-  return fs.readFile(sessionPath, "utf-8");
+export function isSafeRemotePath(remotePath: string): boolean {
+  const segments = remotePath.split("/");
+  return (
+    segments.length >= 2 &&
+    segments.every(
+      (s) => s !== "" && s !== "." && s !== ".." && !/[\\:\0]/.test(s)
+    )
+  );
+}
+
+export function toRemotePath(relPath: string, home = homedir()): string {
+  const [project, ...rest] = relPath.split("/");
+  return [toPortableProject(project, home), ...rest].join("/");
+}
+
+export function toLocalPath(remotePath: string, home = homedir()): string {
+  const [project, ...rest] = remotePath.split("/");
+  return path.join(projectsDir(home), toLocalProject(project, home), ...rest);
 }
 
 /**
- * Write a session transcript file
+ * True if the remote path belongs to the given session: its transcript or the
+ * folder holding its subagents and tool results
  */
-export async function writeSession(
-  sessionPath: string,
-  content: string
-): Promise<void> {
-  await fs.mkdir(path.dirname(sessionPath), { recursive: true });
-  await fs.writeFile(sessionPath, content, "utf-8");
+export function belongsToSession(remotePath: string, sessionId: string): boolean {
+  const entry = remotePath.split("/")[1];
+  return entry === sessionId || entry === `${sessionId}.jsonl`;
 }
 
 /**
- * Get the local path where a session should be stored
+ * Find every file Claude Code keeps per project: transcripts, subagent
+ * transcripts, tool results and memory
  */
-export async function getSessionPath(
-  sessionId: string,
-  project: string
-): Promise<string> {
-  const projectDir = path.join(PROJECTS_DIR, project);
-  await fs.mkdir(projectDir, { recursive: true });
-  return path.join(projectDir, `${sessionId}.jsonl`);
+export async function findLocalFiles(home = homedir()): Promise<LocalFile[]> {
+  const dir = projectsDir(home);
+  const files = await glob("*/**/*", {
+    cwd: dir,
+    nodir: true,
+    dot: true,
+    posix: true,
+    ignore: "**/*.claude-sync-tmp",
+  });
+
+  return files.sort().map((relPath) => ({
+    remotePath: toRemotePath(relPath, home),
+    absPath: path.join(dir, ...relPath.split("/")),
+  }));
 }

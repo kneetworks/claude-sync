@@ -1,18 +1,21 @@
 import { createGitBackend } from "./git.js";
 import { createS3Backend, type S3Config } from "./s3.js";
 
-export interface RemoteSession {
-  id: string;
-  project: string;
-  existsLocally: boolean;
+export interface RemoteFile {
+  /** Portable path, e.g. "@home-Workspace-app/<session>.jsonl" */
+  path: string;
+  /** Changes whenever the stored ciphertext changes (git blob id, S3 ETag) */
+  version: string;
 }
 
 export interface Backend {
-  push(sessionId: string, encryptedData: Buffer): Promise<void>;
-  pushBatch(sessions: Array<{ id: string; data: Buffer }>, onProgress?: (done: number, total: number) => void): Promise<{ pushed: number; failed: number }>;
-  pull(sessionId: string): Promise<Buffer>;
-  list(): Promise<RemoteSession[]>;
-  delete(sessionId: string): Promise<void>;
+  /** Refresh from the remote and list every stored file */
+  list(): Promise<RemoteFile[]>;
+  get(path: string): Promise<Buffer>;
+  /** Stage (git) or upload (S3) one encrypted file */
+  put(path: string, encryptedData: Buffer): Promise<void>;
+  /** Publish everything put since list(); returns the new version of each put path */
+  commit(message: string): Promise<Map<string, string>>;
 }
 
 export interface Config {
