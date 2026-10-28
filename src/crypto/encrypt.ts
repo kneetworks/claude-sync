@@ -6,6 +6,9 @@ const IV_LENGTH = 12;
 const AUTH_TAG_LENGTH = 16;
 const MIN_ENCRYPTED_SIZE = IV_LENGTH + AUTH_TAG_LENGTH + 1; // At least 1 byte of ciphertext
 
+/** Bytes encrypt() adds to its input */
+export const ENCRYPTION_OVERHEAD = IV_LENGTH + AUTH_TAG_LENGTH;
+
 // First bytes that make isEncrypted() treat data as plaintext
 const PLAINTEXT_INDICATORS = [
   0x7b, // {

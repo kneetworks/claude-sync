@@ -6,6 +6,7 @@ import { sync, pull } from "./commands/sync.js";
 import { install } from "./commands/install.js";
 import { status } from "./commands/status.js";
 import { keyExport, keyImport } from "./commands/key.js";
+import { folderAdd, folderRemove } from "./commands/folder.js";
 
 const program = new Command();
 
@@ -68,6 +69,20 @@ key
   .command("import <base64>")
   .description("Use the key from your other machine")
   .action(keyImport);
+
+const folder = program
+  .command("folder")
+  .description("Keep projects in a different folder on this machine than on the others");
+
+folder
+  .command("add <other> <here>")
+  .description("Sync projects from <other> on your other machines (e.g. ~/Workspace) to <here>")
+  .action(folderAdd);
+
+folder
+  .command("remove <other>")
+  .description("Sync projects from <other> to the same place as on your other machines")
+  .action(folderRemove);
 
 program.parseAsync().then(() => {
   // Hooks must exit promptly rather than wait on open handles

@@ -71,6 +71,14 @@ Everything Claude Code keeps per project under `~/.claude/projects/<project>/`: 
 
 Claude Code names each project folder after the project's absolute path (`C:\Users\me\code\app` → `C--Users-me-code-app`), and `/resume` only lists sessions from the folder that matches your current directory. claude-sync stores the home-directory part as `@home` (`@home-code-app`) and expands it with the local home directory when pulling, so a project kept at the same place relative to your home directory lands in the right folder on every machine, even with a different username or OS.
 
+If one machine keeps its projects somewhere else, map the folder on that machine:
+
+```bash
+claude-sync folder add ~/Workspace D:\Projects
+```
+
+Projects in `D:\Projects` are then stored as if they were in `~/Workspace`, so `D:\Projects\app` on this machine and `~/Workspace/app` on the others share their sessions. Add the mapping before the first sync: sessions already synced from the old location aren't moved.
+
 ### Conflicts
 
 Every sync pulls before it pushes, so a push never silently overwrites another machine's work:
@@ -78,6 +86,7 @@ Every sync pulls before it pushes, so a push never silently overwrites another m
 - If one copy of a transcript extends the other (the normal case), the longer one wins.
 - If only one side changed a file since the last sync, that side wins.
 - If both sides changed it (for example, the same session continued on two machines between syncs), the local copy is kept and the other copy is saved to `~/.claude-sync/conflicts/`.
+- A project's memory index (`memory/MEMORY.md`) is merged line by line instead, so memories added on both machines are all listed.
 
 The session that is currently open is never overwritten by a hook; it is reconciled on the next sync after it closes. Deletions are not synced, so Claude Code's cleanup of old transcripts on one machine doesn't remove them anywhere else.
 
@@ -91,6 +100,8 @@ The session that is currently open is never overwritten by a hook; it is reconci
 | `claude-sync pull` | Pull only (`--all` also restores files deleted locally) |
 | `claude-sync install` | Add hooks to Claude Code for automatic sync |
 | `claude-sync status` | Show configuration and sync status |
+| `claude-sync folder add <other> <here>` | Keep projects from `<other>` on your other machines (e.g. `~/Workspace`) in `<here>` on this one |
+| `claude-sync folder remove <other>` | Undo `folder add` |
 | `claude-sync key export` | Print the encryption key as base64 |
 | `claude-sync key import <base64>` | Use an existing encryption key |
 
@@ -103,6 +114,8 @@ Use any private Git repository. GitHub, GitLab, Bitbucket, or self-hosted.
 ```bash
 claude-sync init --git https://github.com/yourusername/claude-sessions-private
 ```
+
+GitHub refuses files over 100 MB, so a transcript that big (usually one with many images) is skipped with a warning and stays on the machine it was written on. Use S3 or R2 if you need those synced too.
 
 ### AWS S3
 

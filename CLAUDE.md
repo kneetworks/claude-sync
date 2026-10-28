@@ -34,7 +34,7 @@ pnpm start status   # Test status command
 | Component | Purpose | Location |
 |-----------|---------|----------|
 | CLI | Command-line interface | `src/cli.ts` |
-| Commands | init, sync (push/pull), install, status, key | `src/commands/` |
+| Commands | init, sync (push/pull), install, status, key, folder | `src/commands/` |
 | Backends | Git, S3-compatible | `src/backends/` |
 | Crypto | AES-256-GCM encryption | `src/crypto/` |
 | Utils | Config, project path mapping, manifest, merge rules, lock | `src/utils/` |
@@ -43,7 +43,7 @@ pnpm start status   # Test status command
 
 ```
 ~/.claude-sync/
-├── config.json     # Backend config
+├── config.json     # Backend config, folder mappings
 ├── key             # Encryption key (256-bit)
 ├── manifest.json   # Per remote path: last synced version, plaintext hash, local stat
 ├── conflicts/      # Remote copies set aside when both machines changed a file

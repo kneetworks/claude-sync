@@ -8,6 +8,8 @@ import { assertEncrypted } from "../crypto/encrypt.js";
 const SYNC_DIR = path.join(homedir(), ".claude-sync", "repo");
 const FILES_DIR = "projects";
 const BRANCH = "main";
+// GitHub rejects a push containing any file over 100 MB
+const MAX_FILE_SIZE = 100_000_000;
 
 function repoGit(): SimpleGit {
   // Fail instead of hanging a Claude Code hook on a credentials prompt
@@ -64,6 +66,8 @@ export function createGitBackend(): Backend {
     path.join(SYNC_DIR, FILES_DIR, `${remotePath}.enc`);
 
   return {
+    maxFileSize: MAX_FILE_SIZE,
+
     async list(): Promise<RemoteFile[]> {
       // The clone is only a cache: start from exactly what the remote has, dropping
       // anything left over from a run whose push failed

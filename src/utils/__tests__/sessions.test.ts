@@ -4,6 +4,7 @@ import {
   belongsToSession,
   encodeProjectDir,
   isSafeRemotePath,
+  toFolderMappings,
   toLocalPath,
   toLocalProject,
   toPortableProject,
@@ -49,6 +50,38 @@ describe("portable project names", () => {
   it("leaves projects outside home unchanged", () => {
     expect(toPortableProject("D--work-app", WINDOWS_HOME)).toBe("D--work-app");
     expect(toLocalProject("D--work-app", MAC_HOME)).toBe("D--work-app");
+  });
+});
+
+describe("folders kept elsewhere on this machine", () => {
+  const folders = toFolderMappings({ "~/Workspace": "D:\\Projects" }, WINDOWS_HOME);
+
+  it("encodes the config's folders", () => {
+    expect(folders).toEqual([{ remote: "@home-Workspace", local: "D--Projects" }]);
+    expect(toFolderMappings({ "~\\Workspace": "/Volumes/code" }, MAC_HOME)).toEqual([
+      { remote: "@home-Workspace", local: "-Volumes-code" },
+    ]);
+  });
+
+  it("stores them as if they were where the other machines keep them", () => {
+    expect(toPortableProject("d--Projects-website", WINDOWS_HOME, folders)).toBe(
+      "@home-Workspace-website"
+    );
+    expect(toLocalProject("@home-Workspace-website", WINDOWS_HOME, folders)).toBe(
+      "D--Projects-website"
+    );
+  });
+
+  it("leaves other projects to the home mapping", () => {
+    expect(toLocalProject("@home-Workspaces-app", WINDOWS_HOME, folders)).toBe(
+      "C--Users-alex-Workspaces-app"
+    );
+    expect(toLocalProject("@home-OneDrive-app", WINDOWS_HOME, folders)).toBe(
+      "C--Users-alex-OneDrive-app"
+    );
+    expect(toPortableProject("D--Projects2-app", WINDOWS_HOME, folders)).toBe(
+      "D--Projects2-app"
+    );
   });
 });
 

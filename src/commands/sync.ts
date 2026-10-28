@@ -4,16 +4,17 @@ import path from "path";
 import { homedir } from "os";
 import ora from "ora";
 import chalk from "chalk";
-import { encrypt, decryptBuffer } from "../crypto/encrypt.js";
+import { encrypt, decryptBuffer, ENCRYPTION_OVERHEAD } from "../crypto/encrypt.js";
 import { getBackend, type Backend } from "../backends/index.js";
 import { loadConfig } from "../utils/config.js";
 import { loadManifest, saveManifest } from "../utils/manifest.js";
 import { acquireLock } from "../utils/lock.js";
-import { resolve, sha256 } from "../utils/merge.js";
+import { isLineMerged, mergeLines, resolve, sha256 } from "../utils/merge.js";
 import {
   belongsToSession,
   findLocalFiles,
   isSafeRemotePath,
+  toFolderMappings,
   toLocalPath,
 } from "../utils/sessions.js";
 
@@ -135,6 +136,7 @@ async function run(options: SyncOptions, push: boolean): Promise<void> {
 
   try {
     const backend = await getBackend(config);
+    const folders = toFolderMappings(config.folders);
     const manifest = await loadManifest();
     const remoteFiles = await backend.list();
     const remoteVersions = new Map(remoteFiles.map((f) => [f.path, f.version]));
@@ -154,7 +156,7 @@ async function run(options: SyncOptions, push: boolean): Promise<void> {
       if (isLive(file.path)) continue;
 
       const entry = manifest[file.path];
-      const localPath = toLocalPath(file.path);
+      const localPath = toLocalPath(file.path, homedir(), folders);
       const restoreMissing =
         options.all && !(await fs.access(localPath).then(() => true, () => false));
       if (entry?.v === file.version && !restoreMissing) continue;
@@ -164,10 +166,15 @@ async function run(options: SyncOptions, push: boolean): Promise<void> {
       // One unwritable file (e.g. a path too long for this machine) shouldn't stop
       // the rest; it stays out of the manifest so the next sync retries it
       try {
-        const resolution = resolve(await readIfExists(localPath), remote, entry?.h);
+        const local = await readIfExists(localPath);
+        const resolution = resolve(local, remote, entry?.h);
 
         if (resolution === "take-remote") {
           await writeFileAtomic(localPath, remote);
+          pulled++;
+        } else if (resolution === "conflict" && local && isLineMerged(file.path)) {
+          // Left out of sync with the remote, so the push below uploads the merge
+          await writeFileAtomic(localPath, mergeLines(local, remote));
           pulled++;
         } else if (resolution === "conflict") {
           const saved = await saveConflict(file.path, remote);
@@ -192,8 +199,10 @@ async function run(options: SyncOptions, push: boolean): Promise<void> {
 
     // Push: upload local files that changed since they were last synced
     if (push) {
-      const localFiles = await findLocalFiles();
+      const localFiles = await findLocalFiles(homedir(), folders);
       const pending = new Map<string, { h: string; size: number; mtime: number }>();
+      // One file the storage refuses would otherwise fail the whole push
+      const maxSize = (backend.maxFileSize ?? Infinity) - ENCRYPTION_OVERHEAD;
 
       for (const [i, file] of localFiles.entries()) {
         progress(`Checking local ${i + 1}/${localFiles.length}...`);
@@ -204,6 +213,11 @@ async function run(options: SyncOptions, push: boolean): Promise<void> {
         try {
           stat = await fs.stat(file.absPath);
           if (entry && entry.size === stat.size && entry.mtime === stat.mtimeMs) continue;
+          if (stat.size > maxSize) {
+            const mb = Math.round(stat.size / 1_000_000);
+            warnings.push(`Skipped ${file.remotePath}: ${mb} MB is too big for this storage`);
+            continue;
+          }
           data = await fs.readFile(file.absPath);
         } catch (error) {
           // Claude Code may have removed or renamed it since it was listed

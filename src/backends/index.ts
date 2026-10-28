@@ -16,6 +16,8 @@ export interface Backend {
   put(path: string, encryptedData: Buffer): Promise<void>;
   /** Publish everything put since list(); returns the new version of each put path */
   commit(message: string): Promise<Map<string, string>>;
+  /** Largest encrypted file the storage accepts, if it has a limit */
+  maxFileSize?: number;
 }
 
 export interface Config {
@@ -23,6 +25,8 @@ export interface Config {
   backendConfig: Record<string, string>;
   initialized: boolean;
   createdAt: string;
+  /** Folder on the other machines ("~/Workspace") -> where this machine keeps it */
+  folders?: Record<string, string>;
 }
 
 export async function getBackend(config: Config): Promise<Backend> {

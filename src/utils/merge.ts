@@ -30,3 +30,31 @@ export function resolve(
   if (lastSyncedHash && sha256(local) === lastSyncedHash) return "take-remote";
   return "conflict";
 }
+
+/**
+ * A project's memory index, which every machine adds one line per memory to
+ */
+export function isLineMerged(remotePath: string): boolean {
+  return /^[^/]+\/memory\/MEMORY\.md$/.test(remotePath);
+}
+
+/**
+ * Combine two copies that both changed: every local line, plus each line only the
+ * remote copy has, placed after the line it follows there. A line removed on one
+ * side comes back, as with any file, since deletions aren't synced.
+ */
+export function mergeLines(local: Buffer, remote: Buffer): Buffer {
+  const merged = local.toString("utf-8").split("\n");
+  let next = 0;
+
+  for (const line of remote.toString("utf-8").split("\n")) {
+    const at = merged.indexOf(line, next);
+    if (at !== -1) {
+      next = at + 1;
+    } else if (!merged.includes(line)) {
+      merged.splice(next++, 0, line);
+    }
+  }
+
+  return Buffer.from(merged.join("\n"), "utf-8");
+}

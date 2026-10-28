@@ -2,7 +2,8 @@ import fs from "fs/promises";
 import chalk from "chalk";
 import { loadConfig } from "../utils/config.js";
 import { loadManifest } from "../utils/manifest.js";
-import { findLocalFiles } from "../utils/sessions.js";
+import { homedir } from "os";
+import { findLocalFiles, toFolderMappings } from "../utils/sessions.js";
 import { keyExists } from "../crypto/keys.js";
 
 export async function status(): Promise<void> {
@@ -43,10 +44,19 @@ export async function status(): Promise<void> {
   }
   console.log();
 
+  const folders = Object.entries(config.folders ?? {});
+  if (folders.length > 0) {
+    console.log(chalk.bold("Folders:"));
+    for (const [other, here] of folders) {
+      console.log(`  ${other} on other machines → ${here}`);
+    }
+    console.log();
+  }
+
   // Local files
   console.log(chalk.bold("Local files:"));
   try {
-    const files = await findLocalFiles();
+    const files = await findLocalFiles(homedir(), toFolderMappings(config.folders));
     const manifest = await loadManifest();
 
     let changed = 0;
