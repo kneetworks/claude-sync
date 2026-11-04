@@ -22,6 +22,14 @@ Claude Code stores conversations locally. When you switch machines, your convers
 - **Incremental** - Only files changed since the last sync are uploaded
 - **Desktop app or terminal** - A notification area icon and a dashboard on Windows, macOS and Linux, or just the command line
 
+## How It Works
+
+![A conversation on Machine A is encrypted and pushed to your private storage, then pulled and decrypted on Machine B](docs/images/how-it-works.png)
+
+Before anything leaves a machine, claude-sync encrypts it with your key, and it decrypts what it downloads, so your storage (Git, S3, GCS or R2) only ever holds encrypted files. Every sync pulls the other machines' changes first, then pushes this machine's, so it works the same in both directions.
+
+Claude Code's hooks run a sync when a session starts and when it ends, and `/resume` on the other machine picks the conversation up. With the desktop app, [the icon](#the-icon) also syncs conversations left open, and whenever you click **Sync now**. The [details](#sync-details) cover what gets synced and how conflicts are settled.
+
 ## Quick Start
 
 You need [Node.js](https://nodejs.org) 18 or later, and [Git](https://git-scm.com) to keep your sessions in a Git repository.
@@ -133,13 +141,7 @@ Besides starting at login and syncing when you step away:
 - On Windows 11 a new icon starts in the hidden overflow (^): drag it onto the taskbar to keep it in sight.
 - `claude-sync dashboard` opens the dashboard without the icon, and `claude-sync tray --no-startup` stops the icon starting at login. Problems are logged to `~/.claude-sync/tray/tray.log`.
 
-## How It Works
-
-![A conversation on Machine A is encrypted and pushed to your private storage, then pulled and decrypted on Machine B](docs/images/how-it-works.png)
-
-Before anything leaves a machine, claude-sync encrypts it with your key, and it decrypts what it downloads, so your storage (Git, S3, GCS or R2) only ever holds encrypted files. Every sync pulls the other machines' changes first, then pushes this machine's, so it works the same in both directions.
-
-Claude Code's hooks run a sync when a session starts and when it ends, and `/resume` on the other machine picks the conversation up. With the desktop app, [the icon](#the-icon) also syncs conversations left open, and whenever you click **Sync now**.
+## Sync Details
 
 ### What gets synced
 
