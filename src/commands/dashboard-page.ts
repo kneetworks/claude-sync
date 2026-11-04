@@ -89,6 +89,7 @@ const PAGE = String.raw`<!doctype html>
   .status summary { cursor: pointer; color: var(--warn); }
   .status ul { margin: 6px 0 0; padding-left: 18px; color: var(--muted); max-height: 160px; overflow: auto; overflow-wrap: anywhere; }
   .nav { display: flex; flex-direction: column; gap: 2px; }
+  .disclaimer { margin: auto 4px 0; color: var(--muted); font-size: 11.5px; line-height: 1.4; }
   .nav-item {
     position: relative; display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 10px;
     border: 0; border-radius: 6px; background: none; color: var(--text); cursor: pointer; text-align: left;
@@ -175,6 +176,7 @@ const PAGE = String.raw`<!doctype html>
     .status { order: 3; flex-basis: 100%; padding: 8px 10px; }
     .nav { order: 4; flex-basis: 100%; flex-direction: row; }
     .nav-item { width: auto; }
+    .disclaimer { display: none; }
     .view-head { padding: 14px 16px 4px; }
     .toolbar { padding: 8px 16px 10px; }
     .totals { padding: 8px 16px; }
@@ -296,6 +298,7 @@ const PAGE = String.raw`<!doctype html>
       <button type="button" class="nav-item" data-view="conversations" aria-current="page"><span data-icon="chat"></span>Conversations<span class="count" id="count"></span></button>
       <button type="button" class="nav-item" data-view="settings"><span data-icon="sliders"></span>Settings<span class="count" id="settings-alert"></span></button>
     </nav>
+    <p class="disclaimer">An independent tool, not affiliated with or endorsed by Anthropic.</p>
   </aside>
 
   <main class="main">
