@@ -50,10 +50,10 @@ program
 
 program
   .command("install")
-  .description("Sync automatically: add Claude Code hooks and the notification area icon")
+  .description("Install Claude Code hooks for automatic sync")
   .option("--global", "Install hooks globally (~/.claude/settings.json)")
   .option("--project", "Install hooks for current project only")
-  .option("--no-tray", "Skip the notification area icon")
+  .option("--tray", "Also show the notification area icon, and start it at login")
   .action(install);
 
 program

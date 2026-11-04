@@ -176,7 +176,10 @@ export async function startDashboardServer(config: Config, port = 0): Promise<Da
       await syncing?.catch(() => {});
       return { result: await syncSilently(conversations) };
     }],
-    ["/api/delete", async ({ keys }) => ({ result: await deleteConversations(conversationKeys(keys)) })],
+    ["/api/delete", async ({ keys, storage }) => {
+      if (typeof storage !== "boolean") throw new HttpError(400, "Expected { keys, storage }");
+      return { result: await deleteConversations(conversationKeys(keys), storage) };
+    }],
     ["/api/compact", async () => ({ result: await compactStorage() })],
   ]);
 

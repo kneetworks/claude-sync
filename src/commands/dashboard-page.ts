@@ -50,18 +50,25 @@ const PAGE = String.raw`<!doctype html>
     }
   }
   * { box-sizing: border-box; }
+  html, body { height: 100%; }
   body {
     margin: 0;
+    overflow: hidden;
     background: var(--bg);
     color: var(--text);
     font: 14px/1.45 "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", sans-serif;
   }
-  .app { max-width: 940px; margin: 0 auto; padding: 24px 16px 48px; }
-  .top { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
-  .brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
+  /* Like a desktop sync app: a sidebar, and a view where only the list scrolls */
+  .shell { display: grid; grid-template-columns: 264px minmax(0, 1fr); height: 100vh; }
+  .side {
+    display: flex; flex-direction: column; gap: 16px; padding: 18px 14px; min-height: 0;
+    overflow-x: hidden; overflow-y: auto; border-right: 1px solid var(--border);
+  }
+  .brand { display: flex; align-items: center; gap: 12px; min-width: 0; padding: 0 4px; }
+  .brand > div { min-width: 0; }
   .brand img { width: 36px; height: 36px; flex: none; }
-  h1 { font-size: 20px; font-weight: 600; margin: 0; }
-  .brand p { margin: 0; color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  h1 { font-size: 18px; font-weight: 600; margin: 0; }
+  .brand p { margin: 0; color: var(--muted); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   button { font: inherit; }
   .primary {
     background: var(--accent); color: var(--accent-text); border: 0; border-radius: 6px;
@@ -69,19 +76,40 @@ const PAGE = String.raw`<!doctype html>
   }
   .primary:hover:not(:disabled) { filter: brightness(1.08); }
   .primary:disabled { opacity: 0.5; cursor: default; }
+  .side .primary { width: 100%; }
   :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; box-shadow: var(--shadow); }
-  .status { display: flex; gap: 14px; align-items: flex-start; padding: 16px 18px; margin-bottom: 16px; }
-  .status .big { width: 28px; height: 28px; flex: none; margin-top: 1px; }
-  .status h2 { font-size: 16px; margin: 0 0 2px; font-weight: 600; }
-  .status p { margin: 0; color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
-  .status details { margin-top: 6px; font-size: 13px; }
+  .status {
+    display: flex; gap: 12px; align-items: flex-start; padding: 14px;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px; box-shadow: var(--shadow);
+  }
+  .status .big { width: 24px; height: 24px; flex: none; margin-top: 1px; }
+  .status h2 { font-size: 14.5px; margin: 0 0 2px; font-weight: 600; }
+  .status p { margin: 0; color: var(--muted); font-size: 12.5px; overflow-wrap: anywhere; }
+  .status details { margin-top: 6px; font-size: 12.5px; }
   .status summary { cursor: pointer; color: var(--warn); }
   .status ul { margin: 6px 0 0; padding-left: 18px; color: var(--muted); max-height: 160px; overflow: auto; overflow-wrap: anywhere; }
-  .panel-head { padding: 16px 18px 6px; }
-  .panel-head h2 { font-size: 15px; margin: 0 0 4px; font-weight: 600; }
-  .hint { margin: 0; color: var(--muted); font-size: 13px; max-width: 72ch; }
-  .toolbar { display: flex; gap: 8px; padding: 10px 18px 12px; flex-wrap: wrap; border-bottom: 1px solid var(--border); }
+  .nav { display: flex; flex-direction: column; gap: 2px; }
+  .nav-item {
+    position: relative; display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 10px;
+    border: 0; border-radius: 6px; background: none; color: var(--text); cursor: pointer; text-align: left;
+  }
+  .nav-item:hover { background: var(--hover); }
+  .nav-item[aria-current="page"] { background: var(--surface); font-weight: 600; box-shadow: var(--shadow); }
+  .nav-item[aria-current="page"]::before {
+    content: ""; position: absolute; left: 0; top: 9px; bottom: 9px; width: 3px; border-radius: 2px; background: var(--accent);
+  }
+  .nav-item [data-icon] { width: 16px; height: 16px; color: var(--muted); flex: none; }
+  .nav-item [data-icon] svg { display: block; width: 100%; height: 100%; }
+  .nav-item .count { margin-left: auto; color: var(--muted); font-size: 12px; font-weight: 400; }
+  .nav-item .count.warn { color: var(--warn); }
+  .main { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--surface); }
+  .view { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+  .view[hidden] { display: none; }
+  .view-head { padding: 22px 24px 6px; }
+  .view-head h2 { font-size: 20px; margin: 0 0 4px; font-weight: 600; }
+  .hint { margin: 0; color: var(--muted); font-size: 13px; max-width: 80ch; }
+  .list, .scroll { flex: 1; min-height: 0; overflow-y: auto; }
+  .toolbar { display: flex; gap: 8px; padding: 10px 24px 12px; flex-wrap: wrap; border-bottom: 1px solid var(--border); }
   .toolbar input, .toolbar select {
     font: inherit; color: var(--text); background: var(--surface-2);
     border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px;
@@ -89,11 +117,11 @@ const PAGE = String.raw`<!doctype html>
   .toolbar input { flex: 1 1 220px; min-width: 0; }
   .row {
     display: grid; grid-template-columns: 26px 26px minmax(0, 1fr) 116px 72px 26px 54px;
-    align-items: center; gap: 4px; padding: 6px 14px 6px 10px; min-height: 46px;
+    align-items: center; gap: 4px; padding: 6px 18px 6px 16px; min-height: 46px;
     border-bottom: 1px solid var(--border);
   }
   .row:hover { background: var(--hover); }
-  .row.child { padding-left: 38px; min-height: 40px; }
+  .row.child { padding-left: 44px; min-height: 40px; }
   .row.project { cursor: pointer; }
   .name { min-width: 0; display: flex; align-items: center; gap: 10px; }
   .name > div { min-width: 0; }
@@ -123,8 +151,8 @@ const PAGE = String.raw`<!doctype html>
   .check:disabled { cursor: default; }
   .empty { padding: 40px 18px; text-align: center; color: var(--muted); }
   .totals {
-    display: flex; gap: 6px 20px; flex-wrap: wrap; padding: 12px 18px;
-    font-size: 13px; color: var(--muted);
+    display: flex; gap: 6px 20px; flex-wrap: wrap; padding: 10px 24px;
+    font-size: 13px; color: var(--muted); border-top: 1px solid var(--border);
   }
   .totals b { color: var(--text); font-weight: 600; }
   #toast {
@@ -138,8 +166,21 @@ const PAGE = String.raw`<!doctype html>
   #toast button { background: none; border: 0; color: inherit; font-weight: 600; text-decoration: underline; cursor: pointer; padding: 0; white-space: nowrap; }
   .spin { animation: spin 1s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
+  /* Narrow windows: the sidebar becomes a bar across the top */
+  @media (max-width: 760px) {
+    .shell { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+    .side { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px 12px; border-right: 0; border-bottom: 1px solid var(--border); overflow: visible; }
+    .brand { flex: 1; }
+    .side .primary { width: auto; }
+    .status { order: 3; flex-basis: 100%; padding: 8px 10px; }
+    .nav { order: 4; flex-basis: 100%; flex-direction: row; }
+    .nav-item { width: auto; }
+    .view-head { padding: 14px 16px 4px; }
+    .toolbar { padding: 8px 16px 10px; }
+    .totals { padding: 8px 16px; }
+  }
   @media (max-width: 640px) {
-    .row { grid-template-columns: 24px 24px minmax(0, 1fr) 60px 22px 54px; padding-right: 10px; }
+    .row { grid-template-columns: 24px 24px minmax(0, 1fr) 60px 22px 54px; padding-right: 10px; padding-left: 10px; }
     .row.child { padding-left: 22px; }
     .date { display: none; }
   }
@@ -155,13 +196,24 @@ const PAGE = String.raw`<!doctype html>
   .icon-button svg { width: 15px; height: 15px; }
   .cleanup { margin: -6px 0 18px; }
   .cleanup label { display: flex; align-items: center; gap: 8px; }
-  .cleanup input {
+  .cleanup input[type="number"] {
     width: 80px; font: inherit; color: var(--text); background: var(--surface-2);
     border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px;
   }
   dialog .cleanup p { margin: 10px 0 0; color: var(--text); font-weight: 600; }
-  .settings { margin-top: 16px; }
-  .setting { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 18px; border-top: 1px solid var(--border); }
+  .choices { display: flex; flex-direction: column; gap: 8px; margin: 0 0 16px; }
+  .cleanup .choices { margin: 12px 0 0; }
+  .choices label {
+    display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; cursor: pointer;
+    border: 1px solid var(--border); border-radius: 6px;
+  }
+  .choices label:has(input:checked) { border-color: var(--accent); }
+  .choices label:has(input:disabled) { opacity: 0.55; cursor: default; }
+  .choices input { margin: 3px 0 0; accent-color: var(--accent); }
+  .choices strong { display: block; font-weight: 600; }
+  .choices small { display: block; color: var(--muted); font-size: 12.5px; }
+  .setting { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 24px; border-top: 1px solid var(--border); }
+  @media (max-width: 760px) { .setting { padding: 12px 16px; } }
   .setting-text { min-width: 0; }
   .setting-text strong { display: block; font-weight: 600; }
   .setting-text p { margin: 2px 0 0; color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
@@ -205,8 +257,8 @@ const PAGE = String.raw`<!doctype html>
 </style>
 </head>
 <body>
-<div class="app">
-  <header class="top">
+<div class="shell">
+  <aside class="side">
     <div class="brand">
       <img src="data:image/png;base64,__ICON__" alt="">
       <div>
@@ -214,16 +266,20 @@ const PAGE = String.raw`<!doctype html>
         <p id="machine">Loading…</p>
       </div>
     </div>
+    <section class="status" id="status" aria-live="polite"></section>
     <button id="sync-now" class="primary" type="button" disabled>Sync now</button>
-  </header>
+    <nav class="nav" aria-label="Views">
+      <button type="button" class="nav-item" data-view="conversations" aria-current="page"><span data-icon="chat"></span>Conversations<span class="count" id="count"></span></button>
+      <button type="button" class="nav-item" data-view="settings"><span data-icon="sliders"></span>Settings<span class="count" id="settings-alert"></span></button>
+    </nav>
+  </aside>
 
-  <section class="card status" id="status" aria-live="polite"></section>
-
-  <section class="card">
-    <div class="panel-head">
-      <h2>Choose what syncs on this computer</h2>
+  <main class="main">
+  <section class="view" id="view-conversations" aria-labelledby="conversations-title">
+    <header class="view-head">
+      <h2 id="conversations-title">Choose what syncs on this computer</h2>
       <p class="hint">Unchecked conversations aren't downloaded to or uploaded from this computer; your other computers keep syncing them. New conversations sync unless their project is unchecked.</p>
-    </div>
+    </header>
     <div class="toolbar">
       <input id="search" type="search" placeholder="Search conversations and projects" aria-label="Search">
       <select id="filter" aria-label="Show">
@@ -238,14 +294,18 @@ const PAGE = String.raw`<!doctype html>
       </select>
       <button type="button" class="secondary" id="clean-up">Clean up…</button>
     </div>
-    <div id="tree" role="list"></div>
-    <div class="totals" id="totals"></div>
+    <div class="list" id="tree" role="list"></div>
+    <footer class="totals" id="totals"></footer>
   </section>
 
-  <section class="card settings" aria-labelledby="settings-title">
-    <div class="panel-head"><h2 id="settings-title">Settings</h2></div>
-    <div id="settings"></div>
+  <section class="view" id="view-settings" aria-labelledby="settings-title" hidden>
+    <header class="view-head">
+      <h2 id="settings-title">Settings</h2>
+      <p class="hint">How claude-sync works on this computer.</p>
+    </header>
+    <div class="scroll" id="settings"></div>
   </section>
+  </main>
 </div>
 <div id="toast" role="status" aria-live="polite"></div>
 <dialog id="dialog" aria-labelledby="dialog-title">
@@ -283,6 +343,7 @@ const PAGE = String.raw`<!doctype html>
     memory: svg('<path d="M4 1.8h5.5L12.5 5v9.2H4z"/><path d="M9.3 1.8V5h3.2M6 8h4.5M6 10.5h4.5"/>', 'fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"'),
     chevron: svg('<path d="M6 3.5 10.5 8 6 12.5"/>', 'fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"'),
     trash: svg('<path d="M2.8 4.3h10.4M6.3 4.3V2.8h3.4v1.5M4.3 4.3l.6 8.9h6.2l.6-8.9M6.7 6.9v4.1M9.3 6.9v4.1"/>', line),
+    sliders: svg('<path d="M2.5 4.5h6.8M12.7 4.5h.8M2.5 11.5h.8M6.7 11.5h6.8"/><circle cx="11" cy="4.5" r="1.7"/><circle cx="5" cy="11.5" r="1.7"/>', line),
   };
   const STATES = {
     "synced": { label: "Up to date", tone: "ok", icon: "synced" },
@@ -335,6 +396,12 @@ const PAGE = String.raw`<!doctype html>
     return conversation.title || "Conversation " + conversation.key.split("/")[1].slice(0, 8);
   }
 
+  // When a conversation last had a message: the date the list shows and clean-up goes
+  // by. A file's own date changes whenever sync rewrites it, so it's only a fallback.
+  const activity = (conversation) => conversation.lastMessage || conversation.modified;
+  const projectActivity = (project) =>
+    Math.max(0, ...project.conversations.map(activity).filter(Boolean)) || project.modified;
+
   function stateIcon(name) {
     const s = STATES[name];
     return el("span", { class: "state " + s.tone, title: s.label, role: "img", "aria-label": s.label, icon: s.icon });
@@ -353,10 +420,10 @@ const PAGE = String.raw`<!doctype html>
 
   function toast(message, action) {
     const box = $("toast");
-    box.replaceChildren(
+    box.replaceChildren(...[
       el("span", { text: message }),
-      action ? el("button", { type: "button", text: action.label, onclick: action.run }) : null
-    );
+      action ? el("button", { type: "button", text: action.label, onclick: action.run }) : null,
+    ].filter(Boolean));
     box.classList.add("show");
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => box.classList.remove("show"), 6000);
@@ -431,28 +498,56 @@ const PAGE = String.raw`<!doctype html>
     }
   }
 
-  async function remove(conversations) {
+  // Removed here only, a conversation stays in storage and Download brings it back;
+  // deleted everywhere, it's gone from storage too
+  async function remove(conversations, everywhere) {
     const keys = conversations.map((c) => c.key);
     try {
-      state = await working("Deleting…", () => api("/api/delete", { keys }));
+      state = await working(everywhere ? "Deleting…" : "Removing…", () => api("/api/delete", { keys, storage: everywhere }));
       const result = state.result;
+      const done = everywhere
+        ? "Deleted " + plural(result.deleted, "conversation") + " from this computer and storage"
+        : "Removed " + plural(result.deleted, "conversation") + " from this computer; Download brings them back";
       if (result.busy) toast("A sync is running. Try again when it finishes.");
-      else if (result.deleted && result.error) toast("Deleted " + plural(result.deleted, "conversation") + ". " + result.error);
+      else if (result.deleted && result.error) toast(done + ". " + result.error);
       else if (result.error) toast(result.error);
-      else toast("Deleted " + plural(result.deleted, "conversation"));
+      else toast(done);
     } catch (error) {
       toast("Couldn't delete: " + error.message);
     }
     render();
   }
 
+  // The two ways to delete. Removing here only needs the conversation to be fully in
+  // storage, or it would be lost.
+  function deleteChoice(canKeepStored, changed) {
+    const here = el("input", { type: "radio", name: "where", value: "here" });
+    const everywhere = el("input", { type: "radio", name: "where", value: "everywhere" });
+    here.checked = canKeepStored;
+    here.disabled = !canKeepStored;
+    everywhere.checked = !canKeepStored;
+    for (const input of [here, everywhere]) input.addEventListener("change", () => changed && changed());
+    const option = (input, title, text) =>
+      el("label", {}, [input, el("span", {}, [el("strong", { text: title }), el("small", { text })])]);
+    return {
+      element: el("div", { class: "choices" }, [
+        option(here, "Remove from this computer", canKeepStored
+          ? "It stays in your storage, and Download brings it back."
+          : "Only once it's fully synced, so nothing is lost."),
+        option(everywhere, "Delete from this computer and storage", "Your other computers keep their own copy."),
+      ]),
+      everywhere: () => everywhere.checked,
+    };
+  }
+
   async function deleteOne(conversation) {
+    const choice = deleteChoice(conversation.state === "synced");
     const sure = await ask(
       "Delete this conversation?",
-      "“" + conversationLabel(conversation) + "” will be deleted from this computer and from your storage. Your other computers keep their own copy. If it's open in Claude Code, close it first.",
-      "Delete", true
+      "“" + conversationLabel(conversation) + "”. If it's open in Claude Code, close it first.",
+      "Delete", true, choice.element
     );
-    if (sure) await remove([conversation]);
+    if (sure) await remove([conversation], choice.everywhere());
   }
 
   async function restore(conversation) {
@@ -471,28 +566,32 @@ const PAGE = String.raw`<!doctype html>
   async function cleanUp() {
     const days = el("input", { type: "number", min: "1", value: "90", "aria-label": "Days" });
     const summary = el("p");
+    let choice;
     const candidates = () => {
       const cutoff = Date.now() - Math.max(1, Number(days.value) || 0) * 86400000;
-      // Only conversations on this computer, whose messages can be dated
+      // Conversations on this computer, dated like the list; removing them here only
+      // takes those fully in storage
       return state.projects.flatMap((p) => p.conversations)
-        .filter((c) => c.state !== "online" && (c.lastMessage || c.modified || Infinity) < cutoff);
+        .filter((c) => c.state !== "online" && (activity(c) || Infinity) < cutoff)
+        .filter((c) => choice.everywhere() || c.state === "synced");
     };
     const update = () => {
       const list = candidates();
       summary.textContent = list.length ? plural(list.length, "conversation") + " · " + bytes(total(list)) : "No conversations that old.";
-      $("dialog-ok").textContent = list.length ? "Delete " + plural(list.length, "conversation") : "Delete";
+      $("dialog-ok").textContent = list.length ? (choice.everywhere() ? "Delete " : "Remove ") + plural(list.length, "conversation") : "Delete";
       $("dialog-ok").disabled = list.length === 0;
     };
+    choice = deleteChoice(true, update);
     days.addEventListener("input", update);
 
     const sure = await ask(
       "Clean up old conversations",
-      "Deletes the conversations on this computer whose latest message is older than this, here and from your storage. Your other computers keep their own copies.",
+      "The conversations on this computer whose latest message is older than this:",
       "Delete", true,
-      el("div", { class: "cleanup" }, [el("label", {}, ["No message for", days, "days"]), summary]),
+      el("div", { class: "cleanup" }, [el("label", {}, ["No message for", days, "days"]), choice.element, summary]),
       update
     );
-    if (sure) await remove(candidates());
+    if (sure) await remove(candidates(), choice.everywhere());
   }
 
   // Runs an action on the server, then shows the state it answers with
@@ -593,6 +692,11 @@ const PAGE = String.raw`<!doctype html>
     const hooksOk = hooks.state === "ok" && !hooks.otherCopy;
 
     const conflicts = s.conflicts === 1 ? "1 copy" : s.conflicts + " copies";
+    // A dot on the menu entry when a setting needs a look
+    const needsLook = !hooksOk || s.conflicts > 0;
+    $("settings-alert").textContent = needsLook ? "●" : "";
+    $("settings-alert").className = "count" + (needsLook ? " warn" : "");
+    $("settings-alert").title = needsLook ? "Something in Settings needs a look" : "";
 
     const history = s.canCompact
       ? setting("Storage history", [el("p", {
@@ -660,8 +764,8 @@ const PAGE = String.raw`<!doctype html>
 
     const lines = [
       state.listedAt
-        ? "Storage checked " + when(state.listedAt).replace(/^(Today|Yesterday)/, (day) => day.toLowerCase()) + " · " + state.storage
-        : "Not synced yet · " + state.storage,
+        ? "Storage checked " + when(state.listedAt).replace(/^(Today|Yesterday)/, (day) => day.toLowerCase())
+        : "Not synced yet",
     ];
     if (result && !busy) {
       if (result.error) lines.push(result.error);
@@ -714,7 +818,7 @@ const PAGE = String.raw`<!doctype html>
           el("small", { text: plural(all.length, "conversation") + " · " + sub, title: sub }),
         ]),
       ]),
-      el("span", { class: "date", text: when(project.modified) }),
+      el("span", { class: "date", text: when(projectActivity(project)), title: "Latest message" }),
       el("span", { class: "size", text: bytes(project.size) }),
       stateIcon(project.state),
       el("span"),
@@ -736,7 +840,7 @@ const PAGE = String.raw`<!doctype html>
         el("span", { class: "kind", icon: "chat" }),
         el("div", {}, [el("span", { class: "label", text: label, title: label })]),
       ]),
-      el("span", { class: "date", text: when(conversation.modified) }),
+      el("span", { class: "date", text: when(activity(conversation)), title: "Latest message" }),
       el("span", { class: "size", text: bytes(conversation.size) }),
       stateIcon(conversation.state),
       el("span", { class: "actions" }, [
@@ -776,7 +880,7 @@ const PAGE = String.raw`<!doctype html>
     const sort = $("sort").value;
     const has = (text) => !!text && text.toLowerCase().includes(query);
     const order = {
-      recent: (a, b) => (b.modified || 0) - (a.modified || 0),
+      recent: (a, b) => (b.activity || 0) - (a.activity || 0),
       size: (a, b) => b.size - a.size,
       name: (a, b) => a.label.localeCompare(b.label),
     }[sort];
@@ -788,10 +892,10 @@ const PAGE = String.raw`<!doctype html>
         const conversations = project.conversations
           .filter((c) => filter === "all" || c.sync === (filter === "on"))
           .filter((c) => nameMatch || has(conversationLabel(c)))
-          .map((c) => Object.assign({ label: conversationLabel(c) }, c))
+          .map((c) => Object.assign({ label: conversationLabel(c), activity: activity(c) }, c))
           .sort(order);
         const shown = conversations.length > 0 || (nameMatch && (filter === "all" || project.sync === (filter === "on")));
-        return shown && Object.assign({}, project, { label, conversations, nameMatch });
+        return shown && Object.assign({}, project, { label, conversations, nameMatch, activity: projectActivity(project) });
       })
       .filter(Boolean)
       .sort(order);
@@ -819,6 +923,16 @@ const PAGE = String.raw`<!doctype html>
     const stat = (label, list) =>
       el("span", {}, [label + " ", el("b", { text: plural(list.length, "conversation") }), " · " + bytes(total(list))]);
     $("totals").replaceChildren(stat("Syncing", on), stat("Not syncing", off));
+    $("count").textContent = String(conversations.length);
+  }
+
+  function show(view) {
+    for (const item of document.querySelectorAll(".nav-item")) {
+      if (item.dataset.view === view) item.setAttribute("aria-current", "page");
+      else item.removeAttribute("aria-current");
+    }
+    $("view-conversations").hidden = view !== "conversations";
+    $("view-settings").hidden = view !== "settings";
   }
 
   function render() {
@@ -845,6 +959,11 @@ const PAGE = String.raw`<!doctype html>
 
   $("sync-now").addEventListener("click", syncNow);
   $("clean-up").addEventListener("click", cleanUp);
+  for (const item of document.querySelectorAll(".nav-item")) {
+    const icon = item.querySelector("[data-icon]");
+    icon.innerHTML = ICONS[icon.dataset.icon];
+    item.addEventListener("click", () => show(item.dataset.view));
+  }
   for (const id of ["search", "filter", "sort"]) $(id).addEventListener("input", render);
   // Hooks sync in the background as sessions start and end
   setInterval(() => { if (!busy && document.visibilityState === "visible") refresh(); }, 15000);

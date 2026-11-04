@@ -31,6 +31,7 @@ import {
   isSafeRemotePath,
   toFolderMappings,
   toLocalPath,
+  type FolderMapping,
 } from "../utils/sessions.js";
 
 export const CONFLICTS_DIR = path.join(homedir(), ".claude-sync", "conflicts");
@@ -427,22 +428,50 @@ export interface DeleteResult {
 }
 
 /**
- * Delete conversations ("<project>/<session id>") from this machine and from the
- * storage. Other machines keep their own copies, since deletions don't sync, and
+ * Conversations whose every file on this machine is in the storage, unchanged since
+ * it synced, so removing them here loses nothing
+ */
+async function storedConversations(keys: Set<string>, folders: FolderMapping[]): Promise<Set<string>> {
+  const manifest = await loadManifest();
+  const stored = (await loadRemoteIndex())?.files ?? {};
+  const unsafe = new Set<string>();
+
+  for (const file of await findLocalFiles(homedir(), folders)) {
+    const key = conversationKey(file.remotePath);
+    if (!keys.has(key)) continue;
+    const entry = manifest[file.remotePath];
+    const stat = await fs.stat(file.absPath).catch(() => null);
+    const synced = entry && stored[file.remotePath] && stat && entry.size === stat.size && entry.mtime === stat.mtimeMs;
+    if (!synced) unsafe.add(key);
+  }
+  return new Set([...keys].filter((key) => !unsafe.has(key)));
+}
+
+/**
+ * Delete conversations ("<project>/<session id>") from this machine, and from the
+ * storage too unless `fromStorage` is false.
+ *
+ * Removed from this machine only, a conversation stays in the storage and its
+ * manifest entries stay, so sync doesn't bring it back but Download (restore) does;
+ * only conversations entirely in the storage are removed that way. Deleted from the
+ * storage too, other machines keep their own copies, since deletions don't sync, and
  * don't upload them again unless the conversation goes on there.
  */
-export async function deleteConversations(keys: string[]): Promise<DeleteResult> {
+export async function deleteConversations(keys: string[], fromStorage = true): Promise<DeleteResult> {
   const config = await loadConfig();
   if (!config?.initialized) return { deleted: 0, error: "claude-sync not initialized" };
   const release = await acquireLock();
   if (!release) return { deleted: 0, busy: true };
 
   const folders = toFolderMappings(config.folders);
+  const wanted = new Set(keys);
   const removed = new Set<string>();
   try {
+    const removable = fromStorage ? wanted : await storedConversations(wanted, folders);
+
     // This machine first: if a file can't be deleted (Claude Code may have it open),
     // its stored copy is kept too
-    for (const key of new Set(keys)) {
+    for (const key of removable) {
       try {
         await fs.rm(toLocalPath(`${key}.jsonl`, homedir(), folders), { force: true });
         await fs.rm(toLocalPath(key, homedir(), folders), { recursive: true, force: true });
@@ -451,9 +480,14 @@ export async function deleteConversations(keys: string[]): Promise<DeleteResult>
         // Counted below
       }
     }
-    const kept = new Set(keys).size - removed.size;
-    const keptNote = kept ? `${kept} couldn't be deleted on this computer; close them in Claude Code first` : undefined;
-    if (removed.size === 0) return { deleted: 0, error: keptNote };
+    const unsynced = wanted.size - removable.size;
+    const open = removable.size - removed.size;
+    const notes = [
+      unsynced ? `${unsynced} weren't removed because they have changes that aren't in your storage yet` : "",
+      open ? `${open} couldn't be deleted on this computer; close them in Claude Code first` : "",
+    ].filter(Boolean);
+    const keptNote = notes.length ? notes.join("; ") : undefined;
+    if (!fromStorage || removed.size === 0) return { deleted: removed.size, error: keptNote };
 
     const backend = await getBackend(config);
     for (const file of await backend.list()) {

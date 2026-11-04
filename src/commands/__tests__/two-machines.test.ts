@@ -102,6 +102,26 @@ describe.skipIf(!fs.existsSync(CLI))("two machines", () => {
     expect(fs.existsSync(a.transcript)).toBe(false);
   });
 
+  it("remove a conversation from one machine only, then download it again", { timeout: 120_000 }, () => {
+    const { a, stored } = setUp("remove-here");
+
+    // Not while it has changes the storage doesn't have
+    fs.appendFileSync(a.transcript, `${message(3)}\n`);
+    expect(a.call("deleteConversations", [KEY], false)).toMatchObject({ deleted: 0 });
+    expect(fs.existsSync(a.transcript)).toBe(true);
+
+    a.run(["sync"]);
+    expect(a.call("deleteConversations", [KEY], false)).toEqual({ deleted: 1 });
+    expect(fs.existsSync(a.transcript)).toBe(false);
+    expect(stored()).toContain(SESSION);
+
+    // Sync leaves it in storage only; Download (restore) brings it back
+    a.run(["sync"]);
+    expect(fs.existsSync(a.transcript)).toBe(false);
+    a.call("syncSilently", [KEY]);
+    expect(contents(a.transcript)).toEqual(["message 1", "message 2", "message 3"]);
+  });
+
   it("compact the storage history without changing its files", { timeout: 120_000 }, () => {
     const { a, b, stored, commits } = setUp("compact");
     fs.appendFileSync(a.transcript, `${message(3)}\n`);

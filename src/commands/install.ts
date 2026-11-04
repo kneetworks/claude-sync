@@ -10,7 +10,7 @@ import { hasDesktop, setUpTray, TRAY_AREA } from "./tray.js";
 interface InstallOptions {
   global?: boolean;
   project?: boolean;
-  /** False with --no-tray */
+  /** With --tray: also the notification area icon, started at login */
   tray?: boolean;
 }
 
@@ -134,7 +134,11 @@ export async function install(options: InstallOptions): Promise<void> {
     process.exit(1);
   }
 
-  if (options.tray === false || !hasDesktop()) return;
+  if (!options.tray) return;
+  if (!hasDesktop()) {
+    console.log(chalk.dim(`No desktop session here, so no ${TRAY_AREA} icon.\n`));
+    return;
+  }
   if (!(await loadConfig())?.initialized) {
     console.log(chalk.dim(`After \`claude-sync init\`, run \`claude-sync install\` again to add the ${TRAY_AREA} icon.\n`));
     return;

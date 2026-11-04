@@ -106,7 +106,7 @@ try {
   }
 
   step("Turning on automatic sync");
-  claudeSync(["install"]);
+  claudeSync(["install", "--tray"]);
 
   if (OPEN) {
     // `install` starts the icon in the background: open its dashboard once it's up
