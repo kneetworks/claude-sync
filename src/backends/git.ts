@@ -12,17 +12,17 @@ const BRANCH = "main";
 const MAX_FILE_SIZE = 100_000_000;
 
 function repoGit(): SimpleGit {
-  return (
-    simpleGit({
-      baseDir: SYNC_DIR,
-      // After a fetch, git's automatic housekeeping repacks the whole history, and on
-      // Windows it can't run in the background, so it held hooks up for minutes. The
-      // clone is only a cache, and encrypted files don't compress, so skip it.
-      config: ["maintenance.auto=false", "gc.auto=0"],
-    })
-      // Fail instead of hanging a Claude Code hook on a credentials prompt
-      .env({ ...process.env, GIT_TERMINAL_PROMPT: "0" })
-  );
+  // Fail instead of hanging a Claude Code hook on a credentials prompt. Set here rather
+  // than with .env(), since simple-git refuses an environment holding variables such
+  // as GIT_ASKPASS or EDITOR, which editors' terminals and many users set.
+  process.env.GIT_TERMINAL_PROMPT = "0";
+  return simpleGit({
+    baseDir: SYNC_DIR,
+    // After a fetch, git's automatic housekeeping repacks the whole history, and on
+    // Windows it can't run in the background, so it held hooks up for minutes. The
+    // clone is only a cache, and encrypted files don't compress, so skip it.
+    config: ["maintenance.auto=false", "gc.auto=0"],
+  });
 }
 
 export async function initGitBackend(url: string): Promise<void> {
