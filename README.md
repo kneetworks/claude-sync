@@ -26,17 +26,17 @@ Claude Code stores conversations locally. When you switch machines, your convers
 
 You need [Node.js](https://nodejs.org) 18 or later, and [Git](https://git-scm.com) to keep your sessions in a Git repository.
 
-### Desktop app
+### With the desktop app
 
-The easiest way to start: claude-sync runs like a desktop sync app. An icon in the notification area (the menu bar on macOS) shows when it's syncing, and a dashboard connects your storage, chooses which conversations sync on each machine and cleans up old ones.
-
-Download this repository (**Code → Download ZIP**, or `git clone`) and double-click the installer for your system:
+The easiest way to start. Download this repository (**Code → Download ZIP**, or `git clone`) and double-click the installer for your system:
 
 | Windows | macOS | Linux |
 |---------|-------|-------|
 | `install-windows.cmd` | `install-macos.command` | `./install-linux.sh` |
 
-It installs claude-sync, turns on syncing with Claude Code, and opens the dashboard to connect your storage, with steps for creating one. From then on your conversations sync on their own.
+It installs claude-sync, turns on syncing with Claude Code, adds the [icon](#the-icon) and opens the [dashboard](#desktop-app) to connect your storage, with steps for creating one. From then on your conversations sync on their own.
+
+The first time, your system may warn about a script from the internet: on Windows choose **More info → Run anyway**, on macOS allow it in **System Settings → Privacy & Security**.
 
 Or with npm, then click the icon to connect your storage:
 
@@ -45,11 +45,7 @@ npm install -g @chronicideas/claude-sync
 claude-sync install --tray
 ```
 
-[![The claude-sync dashboard](docs/images/dashboard.png)](docs/dashboard.md)
-
-**[See the dashboard and icon →](docs/dashboard.md)**
-
-### Terminal only
+### In the terminal
 
 For a server, a machine without a desktop, or if you'd rather not have the icon:
 
@@ -74,13 +70,76 @@ claude-sync install --global
 
 Both work the same underneath, so you can add the icon later with `claude-sync install --tray`.
 
+## Desktop App
+
+An icon in the notification area (the menu bar on macOS) shows when a sync runs, and a dashboard lets you connect your storage, choose which conversations sync on each machine, clean up old ones and change settings, without the terminal. It runs on **Windows, macOS and Linux** with nothing to install beyond claude-sync: PowerShell draws the icon on Windows, `osascript` on macOS and `python3` on Linux. It's optional: the hooks keep syncing whether the icon runs or not.
+
+![The claude-sync dashboard](docs/images/dashboard.png)
+
+### Connect your storage
+
+![Connect your storage](docs/images/setup.png)
+
+The first time, the dashboard sets claude-sync up, like `claude-sync init` does in the terminal:
+
+- **Storage**: a private Git repository or a bucket, with short steps for creating one
+- **Encryption key**: made for you on your first machine, to keep somewhere safe. Your other machines ask for it, and **Copy key** in Settings copies it
+- **Project folders**: where your projects are, if your machines keep them in different places
+- **Finish**: turns on syncing with Claude Code, and the icon if you want it, then syncs
+
+### The icon
+
+![The claude-sync icon's menu](docs/images/tray-menu.png)
+
+It shows how things stand at a glance, including the syncs Claude Code runs when a session starts or ends:
+
+![Up to date, syncing, needs a look](docs/images/tray-icon.png)
+
+Click it to open the dashboard; its menu has the status, **Sync now** and **Quit**. It also syncs a conversation you leave open once it has been quiet for 5 minutes, so walking away from one computer without closing Claude Code doesn't keep it from your others.
+
+### Choose what syncs
+
+Every project and conversation on this machine or in your storage is listed with its latest message, size and state: up to date, waiting to upload or download, only in storage, or not syncing here.
+
+- Uncheck a conversation, or a whole project, to keep it off this machine. Your other machines keep syncing it.
+- New conversations sync unless their project is unchecked.
+- A conversation that's only in storage, for example one Claude Code cleaned up after 30 days, has a **Download** button.
+
+### Clean up
+
+![Clean up old conversations](docs/images/clean-up.png)
+
+Delete one conversation from its row, or every conversation with no message for a number of days, in one of two ways:
+
+- **Remove from this computer** frees the space here. The conversation stays in your storage, and **Download** brings it back.
+- **Delete from this computer and storage** removes it from both. Your other machines keep their own copy.
+
+### Settings
+
+![Settings](docs/images/settings.png)
+
+Besides starting at login and syncing when you step away:
+
+- **Sync with Claude Code** checks that the hooks are installed and still work, with **Repair** if not
+- **Encryption key** copies the key for your other machine, without showing it
+- **Project folders** sets up [folder mappings](#restoring-into-the-right-project)
+- **Conflict copies** opens the copies set aside when two machines changed the same file
+- **Storage history** (Git): a Git repository keeps every version ever pushed. That's a safety net for a conversation deleted or overwritten by mistake, but it grows with each sync, so choose how long old versions stay: 1, 3, 7 (the default) or 30 days, or forever. It's one setting for all your machines, and the icon drops older versions about once a day; **Compact** drops them all now.
+
+### Good to know
+
+- The dashboard is served on `127.0.0.1` only, behind a one-time link, so other websites and other users can't reach it. It opens in a window of its own when Chrome, Edge, Chromium or Brave is installed.
+- On Linux the icon needs GTK and Ayatana AppIndicator for `python3` (`sudo apt install gir1.2-ayatanaappindicator3-0.1` on Debian and Ubuntu); GNOME also needs the AppIndicator extension. macOS needs version 11 or later.
+- On Windows 11 a new icon starts in the hidden overflow (^): drag it onto the taskbar to keep it in sight.
+- `claude-sync dashboard` opens the dashboard without the icon, and `claude-sync tray --no-startup` stops the icon starting at login. Problems are logged to `~/.claude-sync/tray/tray.log`.
+
 ## How It Works
 
 ![A conversation on Machine A is encrypted and pushed to your private storage, then pulled and decrypted on Machine B](docs/images/how-it-works.png)
 
 Before anything leaves a machine, claude-sync encrypts it with your key, and it decrypts what it downloads, so your storage (Git, S3, GCS or R2) only ever holds encrypted files. Every sync pulls the other machines' changes first, then pushes this machine's, so it works the same in both directions.
 
-Claude Code's hooks run a sync when a session starts and when it ends, and `/resume` on the other machine picks the conversation up. The desktop app also syncs a conversation left open once it has been quiet for 5 minutes, and whenever you click **Sync now**.
+Claude Code's hooks run a sync when a session starts and when it ends, and `/resume` on the other machine picks the conversation up. With the desktop app, [the icon](#the-icon) also syncs conversations left open, and whenever you click **Sync now**.
 
 ### What gets synced
 
@@ -124,8 +183,8 @@ The session that is currently open is never overwritten by a hook, nor uploaded 
 | `claude-sync folder remove <other>` | Undo `folder add` |
 | `claude-sync key export` | Print the encryption key as base64 |
 | `claude-sync key import <base64>` | Use an existing encryption key |
-| `claude-sync dashboard` | Open the [dashboard](docs/dashboard.md) in your browser |
-| `claude-sync tray` | Show the [notification area icon](docs/dashboard.md) (`--startup` to start it at login) |
+| `claude-sync dashboard` | Open the [dashboard](#desktop-app) in your browser |
+| `claude-sync tray` | Show the [notification area icon](#the-icon) (`--startup` to start it at login) |
 
 ## Storage Backends
 
@@ -309,13 +368,15 @@ pnpm test
 node dist/cli.js status
 ```
 
+The tray icon is drawn from `assets/tray-icon.svg`. After changing it, run `powershell -NoProfile -ExecutionPolicy Bypass -STA -File scripts/render-tray-icons.ps1` on Windows to regenerate `src/tray/icons.ts`.
+
 ## Roadmap
 
 - [x] Git backend
 - [x] S3/GCS/R2 backend support
 - [x] Parallel encryption and batch uploads
 - [x] Encryption validation (prevent plaintext leaks)
-- [x] Selective sync (by project or conversation, from the [dashboard](docs/dashboard.md))
+- [x] Selective sync (by project or conversation, from the [dashboard](#choose-what-syncs))
 - [ ] Session search across machines
 - [ ] Team sharing (shared encryption keys)
 - [ ] Conflict resolution for concurrent edits

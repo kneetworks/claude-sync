@@ -37,7 +37,7 @@ pnpm start status   # Test status command
 | Commands | init, sync (push/pull), install, status, key, folder, dashboard, tray | `src/commands/` |
 | Tray | Notification area icon scripts per OS (PowerShell, osascript, python3), start at login; icon PNGs generated from `assets/tray-icon.svg` by `scripts/render-tray-icons.ps1` | `src/tray/` |
 | Installers | Double-click setup per OS; all run the same build, install and setup steps | `install-*`, `scripts/setup.mjs` |
-| Docs | The dashboard and icon's feature page, linked from the README, and its screenshots (taken from a made-up demo setup, never real data) | `docs/` |
+| Docs | Images for the README: screenshots of the dashboard and icon (taken from a made-up demo setup, never real data) and the How It Works illustration | `docs/images/` |
 | Backends | Git, S3-compatible | `src/backends/` |
 | Crypto | AES-256-GCM encryption | `src/crypto/` |
 | Utils | Config, project path mapping, manifest, merge rules, lock, selective sync, dashboard data, storage setup shared by init and the dashboard | `src/utils/` |
