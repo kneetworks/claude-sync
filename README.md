@@ -154,7 +154,8 @@ Every sync pulls before it pushes, so a push never silently overwrites another m
 
 - If one copy of a transcript extends the other (the normal case), the longer one wins.
 - If only one side changed a file since the last sync, that side wins.
-- If both sides changed it (for example, the same session continued on two machines between syncs), the local copy is kept and the other copy is saved to `~/.claude-sync/conflicts/`.
+- If both copies of a conversation moved on since they last matched, the one with the most recent message wins. This is what happens when you switch machines while Claude Code still has the conversation open on the first one, since it keeps writing a few bookkeeping lines to it. If the other copy has messages of its own (the conversation really did go on in both places), it's saved to `~/.claude-sync/conflicts/`.
+- For any other file both sides changed, the local copy is kept and the other copy is saved to `~/.claude-sync/conflicts/`.
 - A project's memory index (`memory/MEMORY.md`) is merged line by line instead, so memories added on both machines are all listed.
 
 The session that is currently open is never overwritten by a hook; it is reconciled on the next sync after it closes. Deletions are not synced, so Claude Code's cleanup of old transcripts on one machine doesn't remove them anywhere else.

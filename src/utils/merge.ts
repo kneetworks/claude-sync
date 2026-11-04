@@ -39,6 +39,71 @@ export function isLineMerged(remotePath: string): boolean {
 }
 
 /**
+ * A conversation's transcript, or one of its subagents': JSON lines, appended to
+ */
+export function isTranscript(remotePath: string): boolean {
+  return remotePath.endsWith(".jsonl");
+}
+
+/**
+ * When the latest user or assistant message in a transcript was written (ms since
+ * the epoch), or 0 without one. Claude Code also appends bookkeeping records, such as
+ * costs and titles, which don't count.
+ */
+export function latestMessageTime(transcript: Buffer): number {
+  const text = transcript.toString("utf-8");
+  let end = text.length;
+
+  while (end > 0) {
+    const start = text.lastIndexOf("\n", end - 1) + 1;
+    const line = text.slice(start, end).trim();
+    end = start - 1;
+    if (!line) continue;
+
+    try {
+      const record = JSON.parse(line);
+      if ((record.type === "user" || record.type === "assistant") && typeof record.timestamp === "string") {
+        const time = Date.parse(record.timestamp);
+        if (!Number.isNaN(time)) return time;
+      }
+    } catch {
+      // A line cut short while it was being written
+    }
+  }
+  return 0;
+}
+
+/**
+ * The lines of `copy` from the first one that differs from `other`
+ */
+function divergedTail(copy: Buffer, other: Buffer): Buffer {
+  const length = Math.min(copy.length, other.length);
+  let i = 0;
+  while (i < length && copy[i] === other[i]) i++;
+  const lineStart = i === 0 ? 0 : copy.lastIndexOf(0x0a, i - 1) + 1;
+  return copy.subarray(lineStart);
+}
+
+/**
+ * Choose between two copies of a conversation that both moved on since they last
+ * matched. Usually the conversation continued on another machine while Claude Code
+ * here, still holding it open, wrote a few bookkeeping records to it. The copy with
+ * the most recent message wins; the other only needs keeping if it has messages of
+ * its own, which happens when the conversation really did go on in both places.
+ */
+export function pickTranscript(
+  local: Buffer,
+  remote: Buffer
+): { take: "local" | "remote"; keepOther: boolean } {
+  const takeRemote = latestMessageTime(remote) > latestMessageTime(local);
+  const [winner, other] = takeRemote ? [remote, local] : [local, remote];
+  return {
+    take: takeRemote ? "remote" : "local",
+    keepOther: latestMessageTime(divergedTail(other, winner)) > 0,
+  };
+}
+
+/**
  * Combine two copies that both changed: every local line, plus each line only the
  * remote copy has, placed after the line it follows there. A line removed on one
  * side comes back, as with any file, since deletions aren't synced.

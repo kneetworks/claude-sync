@@ -15,7 +15,14 @@ import {
   type RemoteIndex,
 } from "../utils/manifest.js";
 import { acquireLock } from "../utils/lock.js";
-import { isLineMerged, mergeLines, resolve, sha256 } from "../utils/merge.js";
+import {
+  isLineMerged,
+  isTranscript,
+  mergeLines,
+  pickTranscript,
+  resolve,
+  sha256,
+} from "../utils/merge.js";
 import { isSelected } from "../utils/selection.js";
 import {
   belongsToSession,
@@ -115,10 +122,14 @@ async function fetchRemote(backend: Backend, remotePath: string): Promise<Buffer
   }
 }
 
-async function saveConflict(remotePath: string, data: Buffer): Promise<string> {
+async function saveConflict(
+  remotePath: string,
+  data: Buffer,
+  side: "remote" | "local" = "remote"
+): Promise<string> {
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
   const { dir, name, ext } = path.parse(path.join(CONFLICTS_DIR, ...remotePath.split("/")));
-  const file = path.join(dir, `${name}.remote-${stamp}${ext}`);
+  const file = path.join(dir, `${name}.${side}-${stamp}${ext}`);
   await fs.mkdir(dir, { recursive: true });
   await fs.writeFile(file, data);
   return file;
@@ -194,6 +205,7 @@ async function run(options: SyncOptions, push: boolean): Promise<SyncResult> {
       try {
         const local = await readIfExists(localPath);
         const resolution = resolve(local, remote, entry?.h);
+        let inSync = resolution === "take-remote" || resolution === "same";
 
         if (resolution === "take-remote") {
           await writeFileAtomic(localPath, remote);
@@ -202,13 +214,26 @@ async function run(options: SyncOptions, push: boolean): Promise<SyncResult> {
           // Left out of sync with the remote, so the push below uploads the merge
           await writeFileAtomic(localPath, mergeLines(local, remote));
           pulled++;
+        } else if (resolution === "conflict" && local && isTranscript(file.path)) {
+          // Continue from the most recent message; if the local copy wins, the push
+          // below uploads it
+          const { take, keepOther } = pickTranscript(local, remote);
+          if (keepOther) {
+            const [other, side] = take === "remote" ? [local, "local" as const] : [remote, "remote" as const];
+            const saved = await saveConflict(file.path, other, side);
+            warnings.push(`Conflict on ${file.path}: kept the copy with the latest message, the ${side} copy is saved to ${saved}`);
+          }
+          if (take === "remote") {
+            await writeFileAtomic(localPath, remote);
+            pulled++;
+            inSync = true;
+          }
         } else if (resolution === "conflict") {
           const saved = await saveConflict(file.path, remote);
           warnings.push(`Conflict on ${file.path}: kept the local copy, remote copy saved to ${saved}`);
         }
 
         // Recording the local stat marks the file as matching this remote version
-        const inSync = resolution === "take-remote" || resolution === "same";
         const stat = inSync ? await fs.stat(localPath) : null;
         manifest[file.path] = {
           v: file.version,
