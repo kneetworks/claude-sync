@@ -108,6 +108,13 @@ export async function enableAutostart(node: string, cli: string): Promise<string
   return file;
 }
 
+export async function isAutostartEnabled(): Promise<boolean> {
+  return fs.access(autostartFile()).then(
+    () => true,
+    () => false
+  );
+}
+
 /**
  * Stop starting the tray icon at login; false if it wasn't set up
  */

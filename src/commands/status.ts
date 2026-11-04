@@ -5,6 +5,9 @@ import { loadManifest } from "../utils/manifest.js";
 import { homedir } from "os";
 import { findLocalFiles, toFolderMappings } from "../utils/sessions.js";
 import { keyExists } from "../crypto/keys.js";
+import { isAutostartEnabled } from "../tray/autostart.js";
+import { runningTray } from "../tray/instance.js";
+import { TRAY_AREA } from "./tray.js";
 
 export async function status(): Promise<void> {
   console.log(chalk.bold("\n🔄 Claude Sync Status\n"));
@@ -77,6 +80,12 @@ export async function status(): Promise<void> {
   } catch {
     console.log(chalk.dim("  Unable to read sessions"));
   }
+  console.log();
+
+  console.log(chalk.bold("Icon:"));
+  if (await runningTray()) console.log(chalk.green(`  ✓ Running in the ${TRAY_AREA}`));
+  else console.log(chalk.dim("  Not running (`claude-sync tray` starts it)"));
+  console.log(`  Starts at login: ${(await isAutostartEnabled()) ? "yes" : "no"}`);
   console.log();
 
   // Created date

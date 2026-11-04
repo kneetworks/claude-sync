@@ -4,10 +4,14 @@ import { fileURLToPath } from "url";
 import ora from "ora";
 import chalk from "chalk";
 import { homedir } from "os";
+import { loadConfig } from "../utils/config.js";
+import { hasDesktop, setUpTray, TRAY_AREA } from "./tray.js";
 
 interface InstallOptions {
   global?: boolean;
   project?: boolean;
+  /** False with --no-tray */
+  tray?: boolean;
 }
 
 interface HookGroup {
@@ -81,5 +85,20 @@ export async function install(options: InstallOptions): Promise<void> {
   } catch (error) {
     spinner.fail(`Failed to install hooks: ${error}`);
     process.exit(1);
+  }
+
+  if (options.tray === false || !hasDesktop()) return;
+  if (!(await loadConfig())?.initialized) {
+    console.log(chalk.dim(`After \`claude-sync init\`, run \`claude-sync install\` again to add the ${TRAY_AREA} icon.\n`));
+    return;
+  }
+
+  try {
+    await setUpTray();
+    console.log(chalk.green(`✅ claude-sync is in the ${TRAY_AREA} and starts when you log in.`));
+    console.log(chalk.dim("   Click its icon to see what's syncing and choose what syncs on this computer.\n"));
+  } catch (error) {
+    console.log(chalk.yellow(`⚠ Couldn't add the ${TRAY_AREA} icon: ${(error as Error).message}`));
+    console.log(chalk.dim("  Sync still runs from the hooks. Try again with `claude-sync tray --startup`.\n"));
   }
 }

@@ -241,7 +241,7 @@ export async function init(options: InitOptions): Promise<void> {
   console.log(
     chalk.dim("  2. Run ") +
       chalk.cyan("claude-sync install") +
-      chalk.dim(" to add hooks to Claude Code\n")
+      chalk.dim(" to sync automatically and add the notification area icon\n")
   );
 
   // Security reminder

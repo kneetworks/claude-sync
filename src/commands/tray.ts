@@ -18,6 +18,7 @@ import { startDashboardServer } from "./dashboard.js";
 
 const TRAY_DIR = path.join(homedir(), ".claude-sync", "tray");
 const LOG_FILE = path.join(TRAY_DIR, "tray.log");
+const CLI = fileURLToPath(new URL("../cli.js", import.meta.url));
 // Often enough to show a hook's sync while it runs, cheap enough to go unnoticed
 const POLL_MS = 2000;
 
@@ -28,8 +29,41 @@ interface TrayOptions {
   startup?: boolean;
 }
 
-const AREA =
+/** What this OS calls the place the icon goes */
+export const TRAY_AREA =
   process.platform === "darwin" ? "menu bar" : process.platform === "win32" ? "notification area" : "system tray";
+
+/**
+ * False over SSH or on a Linux machine without a graphical session, where an icon
+ * has nowhere to go
+ */
+export function hasDesktop(): boolean {
+  if (process.platform === "win32") return true;
+  if (process.platform === "darwin") return !process.env.SSH_CONNECTION;
+  return !!(process.env.DISPLAY || process.env.WAYLAND_DISPLAY);
+}
+
+/**
+ * Start the icon in a background process, so the terminal (or the login item) can
+ * close; false if it's already running
+ */
+export async function startTray(): Promise<boolean> {
+  if (await runningTray()) return false;
+  spawn(process.execPath, [CLI, "tray", "--foreground"], {
+    detached: true,
+    stdio: "ignore",
+    windowsHide: true,
+  }).unref();
+  return true;
+}
+
+/**
+ * Start the icon at every login, and now
+ */
+export async function setUpTray(): Promise<void> {
+  await enableAutostart(process.execPath, CLI);
+  await startTray();
+}
 
 function log(message: string): Promise<void> {
   return fs
@@ -56,10 +90,9 @@ export async function tray(options: TrayOptions): Promise<void> {
     return;
   }
 
-  const cli = fileURLToPath(new URL("../cli.js", import.meta.url));
   if (options.startup) {
     try {
-      const file = await enableAutostart(process.execPath, cli);
+      const file = await enableAutostart(process.execPath, CLI);
       console.log(chalk.green(`✓ claude-sync will start at login (${file})`));
     } catch (error) {
       console.log(chalk.red(`Error: couldn't set up starting at login: ${(error as Error).message}`));
@@ -69,17 +102,11 @@ export async function tray(options: TrayOptions): Promise<void> {
 
   if (options.foreground) return runTray(config);
 
-  if (await runningTray()) {
-    console.log(`claude-sync is already in the ${AREA}.`);
-    return;
+  if (await startTray()) {
+    console.log(`claude-sync is now in the ${TRAY_AREA}. Click its icon to open the dashboard.`);
+  } else {
+    console.log(`claude-sync is already in the ${TRAY_AREA}.`);
   }
-  // In the background, so the terminal (or the login item) can close
-  spawn(process.execPath, [cli, "tray", "--foreground"], {
-    detached: true,
-    stdio: "ignore",
-    windowsHide: true,
-  }).unref();
-  console.log(`claude-sync is now in the ${AREA}. Click its icon to open the dashboard.`);
 }
 
 async function runTray(config: Config): Promise<void> {
