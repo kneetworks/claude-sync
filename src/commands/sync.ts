@@ -32,7 +32,7 @@ import {
   toLocalPath,
 } from "../utils/sessions.js";
 
-const CONFLICTS_DIR = path.join(homedir(), ".claude-sync", "conflicts");
+export const CONFLICTS_DIR = path.join(homedir(), ".claude-sync", "conflicts");
 
 interface SyncOptions {
   /** Also restore files deleted locally after they were synced */

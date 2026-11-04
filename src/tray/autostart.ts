@@ -2,6 +2,7 @@ import { spawnSync } from "child_process";
 import fs from "fs/promises";
 import path from "path";
 import { homedir } from "os";
+import { fileURLToPath } from "url";
 
 const NAME = "claude-sync";
 
@@ -106,6 +107,14 @@ export async function enableAutostart(node: string, cli: string): Promise<string
     await fs.writeFile(file, desktopEntry([node, cli, "tray", "--foreground"]));
   }
   return file;
+}
+
+/**
+ * Start the tray icon at login or stop doing so, for the dashboard's setting
+ */
+export async function setStartAtLogin(enabled: boolean): Promise<void> {
+  if (enabled) await enableAutostart(process.execPath, fileURLToPath(new URL("../cli.js", import.meta.url)));
+  else await disableAutostart();
 }
 
 export async function isAutostartEnabled(): Promise<boolean> {

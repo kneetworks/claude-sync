@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { nameProject, summarizeTranscript } from "../conversations.js";
+import { nameProject, storageLink, summarizeTranscript } from "../conversations.js";
 
 const line = (record: object) => JSON.stringify(record);
 const prompt = (content: unknown, extra: object = {}) =>
@@ -73,6 +73,26 @@ describe("summarizeTranscript", () => {
 
   it("returns nothing for a transcript without titles or prompts", () => {
     expect(summarizeTranscript([], [])).toEqual({ title: undefined, cwds: [] });
+  });
+});
+
+describe("storageLink", () => {
+  const git = (url: string) => storageLink({ backend: "git", backendConfig: { url } });
+
+  it("links to the repository on its git host", () => {
+    expect(git("https://github.com/sam/sessions.git")).toBe("https://github.com/sam/sessions");
+    expect(git("git@gitlab.com:sam/sessions.git")).toBe("https://gitlab.com/sam/sessions");
+    expect(git("ssh://git@git.example.com/sam/sessions")).toBe("https://git.example.com/sam/sessions");
+  });
+
+  it("leaves out credentials in the URL", () => {
+    expect(git("https://sam:secret@github.com/sam/sessions.git")).toBe("https://github.com/sam/sessions");
+  });
+
+  it("has no link for a local repository or a non-AWS bucket", () => {
+    expect(git("/srv/git/sessions.git")).toBeNull();
+    expect(storageLink({ backend: "s3", backendConfig: { bucket: "b", endpoint: "https://r2.example" } })).toBeNull();
+    expect(storageLink({ backend: "s3", backendConfig: { bucket: "b" } })).toBe("https://s3.console.aws.amazon.com/s3/buckets/b");
   });
 });
 

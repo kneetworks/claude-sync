@@ -1,16 +1,22 @@
+import fs from "fs/promises";
 import http from "http";
 import type { AddressInfo } from "net";
 import { randomBytes, timingSafeEqual } from "crypto";
 import chalk from "chalk";
+import { glob } from "glob";
 import { getBackend, type Config } from "../backends/index.js";
+import { exportKey } from "../crypto/keys.js";
 import { loadConfig, saveConfig } from "../utils/config.js";
 import { loadDashboardState } from "../utils/conversations.js";
 import { isSyncRunning } from "../utils/lock.js";
 import { loadLastSync } from "../utils/manifest.js";
-import { openApp } from "../utils/open.js";
+import { openApp, openWithSystem } from "../utils/open.js";
 import { selectConversation, selectProject } from "../utils/selection.js";
+import { isAutostartEnabled, setStartAtLogin } from "../tray/autostart.js";
 import { runningTray } from "../tray/instance.js";
-import { syncSilently, type SyncResult } from "./sync.js";
+import { addFolderMapping, removeFolderMapping } from "./folder.js";
+import { hooksStatus, installHooks } from "./install.js";
+import { CONFLICTS_DIR, syncSilently, type SyncResult } from "./sync.js";
 import { dashboardPage } from "./dashboard-page.js";
 
 interface DashboardOptions {
@@ -89,12 +95,70 @@ export async function startDashboardServer(config: Config, port = 0): Promise<Da
   const state = async () => {
     // Re-read each time: `claude-sync folder add` may have changed the config meanwhile
     const current = (await loadConfig()) ?? config;
+    const conflicts = await glob("**/*", { cwd: CONFLICTS_DIR, nodir: true }).catch(() => []);
     return {
       ...(await loadDashboardState(current, maxFileSize)),
       syncing: !!syncing || (await isSyncRunning()),
       lastSync: await loadLastSync(),
+      settings: {
+        startAtLogin: await isAutostartEnabled(),
+        hooks: await hooksStatus(),
+        folders: Object.entries(current.folders ?? {}).map(([other, here]) => ({ other, here })),
+        conflicts: conflicts.length,
+        canCompact: current.backend === "git",
+      },
     };
   };
+
+  const requireConfig = async () => {
+    const current = await loadConfig();
+    if (!current) throw new HttpError(500, "Config missing");
+    return current;
+  };
+  const text = (value: unknown, name: string) => {
+    if (typeof value !== "string" || !value.trim()) throw new HttpError(400, `Expected ${name}`);
+    return value.trim();
+  };
+
+  // Each action changes something, then the page gets the new state, plus anything
+  // the action returns
+  type Action = (body: Record<string, unknown>) => Promise<Record<string, unknown> | void>;
+  const actions = new Map<string, Action>([
+    ["/api/selection", async ({ project, conversation, sync }) => {
+      if (typeof project !== "string" || typeof sync !== "boolean") {
+        throw new HttpError(400, "Expected { project, sync }");
+      }
+      if (conversation !== undefined && (typeof conversation !== "string" || !conversation.startsWith(`${project}/`))) {
+        throw new HttpError(400, "The conversation must be in the project");
+      }
+      const current = await requireConfig();
+      const selection = conversation
+        ? selectConversation(current.selection ?? {}, conversation, sync)
+        : selectProject(current.selection ?? {}, project, sync);
+      await saveConfig({ ...current, selection });
+    }],
+    ["/api/sync", async () => ({ result: await sync() })],
+    ["/api/startup", async ({ enabled }) => {
+      if (typeof enabled !== "boolean") throw new HttpError(400, "Expected { enabled }");
+      await setStartAtLogin(enabled);
+    }],
+    ["/api/hooks", () => installHooks()],
+    // The page puts it on the clipboard without showing it
+    ["/api/key", async () => ({ key: await exportKey() })],
+    ["/api/folders/add", async ({ other, here }) => {
+      const current = await requireConfig();
+      await addFolderMapping(current, text(other, "other"), text(here, "here")).catch((error) => {
+        throw new HttpError(400, errorMessage(error));
+      });
+    }],
+    ["/api/folders/remove", async ({ other }) => {
+      await removeFolderMapping(await requireConfig(), text(other, "other"));
+    }],
+    ["/api/conflicts/open", async () => {
+      await fs.mkdir(CONFLICTS_DIR, { recursive: true });
+      await openWithSystem(CONFLICTS_DIR);
+    }],
+  ]);
 
   async function handle(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
     if (!allowedHosts.has(req.headers.host ?? "")) throw new HttpError(403, "Forbidden");
@@ -123,28 +187,10 @@ export async function startDashboardServer(config: Config, port = 0): Promise<Da
       return sendJson(res, 200, await state());
     }
 
-    if (req.method === "POST" && pathname === "/api/selection") {
-      const { project, conversation, sync } = await readJson(req);
-      if (typeof project !== "string" || typeof sync !== "boolean") {
-        throw new HttpError(400, "Expected { project, sync }");
-      }
-      if (conversation !== undefined && (typeof conversation !== "string" || !conversation.startsWith(`${project}/`))) {
-        throw new HttpError(400, "The conversation must be in the project");
-      }
-
-      const current = await loadConfig();
-      if (!current) throw new HttpError(500, "Config missing");
-      const selection = conversation
-        ? selectConversation(current.selection ?? {}, conversation, sync)
-        : selectProject(current.selection ?? {}, project, sync);
-      await saveConfig({ ...current, selection });
-
-      return sendJson(res, 200, await state());
-    }
-
-    if (req.method === "POST" && pathname === "/api/sync") {
-      const result = await sync();
-      return sendJson(res, 200, { ...(await state()), result });
+    const action = req.method === "POST" ? actions.get(pathname) : undefined;
+    if (action) {
+      const extra = await action(await readJson(req));
+      return sendJson(res, 200, { ...(await state()), ...extra });
     }
 
     throw new HttpError(404, "Not found");

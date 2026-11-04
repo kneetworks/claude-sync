@@ -56,6 +56,8 @@ export interface ProjectInfo {
 export interface DashboardState {
   machine: string;
   storage: string;
+  /** A web page for the storage, if it has one */
+  storageLink: string | null;
   /** When the storage was last listed, by any sync */
   listedAt?: number;
   projects: ProjectInfo[];
@@ -342,5 +344,28 @@ export async function loadDashboardState(
         (config.backendConfig.url ?? "").replace(/\/\/[^@/]+@/, "//")
       : `s3://${config.backendConfig.bucket}`;
 
-  return { machine: hostname(), storage, listedAt: remoteIndex?.listedAt, projects };
+  return {
+    machine: hostname(),
+    storage,
+    storageLink: storageLink(config),
+    listedAt: remoteIndex?.listedAt,
+    projects,
+  };
+}
+
+/**
+ * A web page for the storage, if there is one: the repository on its git host, or
+ * the S3 console for an AWS bucket
+ */
+export function storageLink(config: Pick<Config, "backend" | "backendConfig">): string | null {
+  const { url, bucket, endpoint } = config.backendConfig;
+  if (config.backend === "git") {
+    // git@host:owner/repo.git or ssh://git@host/owner/repo.git
+    const ssh = /^(?:ssh:\/\/)?[^@\s/]+@([^:/\s]+)[:/](.+?)(?:\.git)?\/?$/.exec(url ?? "");
+    if (ssh) return `https://${ssh[1]}/${ssh[2]}`;
+    // https://[user@]host/owner/repo.git, without any credentials in it
+    const web = /^https?:\/\/(?:[^@/]+@)?([^/]+)\/(.+?)(?:\.git)?\/?$/.exec(url ?? "");
+    return web ? `https://${web[1]}/${web[2]}` : null;
+  }
+  return bucket && !endpoint ? `https://s3.console.aws.amazon.com/s3/buckets/${encodeURIComponent(bucket)}` : null;
 }

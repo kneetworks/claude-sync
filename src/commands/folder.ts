@@ -28,32 +28,53 @@ function normalizeOther(other: string): string {
   return `~/${relative.split(path.sep).join("/")}`;
 }
 
-export async function folderAdd(other: string, here: string): Promise<void> {
-  const config = await requireConfig();
+/**
+ * Keep projects from `other` on the other machines in `here` on this one; throws if
+ * `here` isn't a folder. Returns the mapping as saved.
+ */
+export async function addFolderMapping(
+  config: Config,
+  other: string,
+  here: string
+): Promise<{ other: string; here: string }> {
   const key = normalizeOther(other);
-  const local = path.resolve(here);
+  const local = path.resolve(expandHome(here));
 
   const isDir = await fs.stat(local).then((s) => s.isDirectory(), () => false);
-  if (!isDir) {
-    console.log(chalk.red(`Error: ${local} is not a folder on this machine.`));
-    process.exit(1);
-  }
+  if (!isDir) throw new Error(`${local} is not a folder on this machine.`);
 
   config.folders = { ...config.folders, [key]: local };
   await saveConfig(config);
-  console.log(chalk.green(`✅ Projects in ${key} on your other machines sync to ${local} here`));
+  return { other: key, here: local };
 }
 
-export async function folderRemove(other: string): Promise<void> {
-  const config = await requireConfig();
+/**
+ * Undo addFolderMapping(); false if `other` wasn't mapped
+ */
+export async function removeFolderMapping(config: Config, other: string): Promise<boolean> {
   const key = normalizeOther(other);
-
-  if (!config.folders?.[key]) {
-    console.log(chalk.yellow(`${key} isn't mapped to a folder here.`));
-    return;
-  }
+  if (!config.folders?.[key]) return false;
 
   delete config.folders[key];
   await saveConfig(config);
-  console.log(chalk.green(`✅ Projects in ${key} sync to the same place as on your other machines`));
+  return true;
+}
+
+export async function folderAdd(other: string, here: string): Promise<void> {
+  try {
+    const mapping = await addFolderMapping(await requireConfig(), other, here);
+    console.log(chalk.green(`✅ Projects in ${mapping.other} on your other machines sync to ${mapping.here} here`));
+  } catch (error) {
+    console.log(chalk.red(`Error: ${(error as Error).message}`));
+    process.exit(1);
+  }
+}
+
+export async function folderRemove(other: string): Promise<void> {
+  const key = normalizeOther(other);
+  if (await removeFolderMapping(await requireConfig(), other)) {
+    console.log(chalk.green(`✅ Projects in ${key} sync to the same place as on your other machines`));
+  } else {
+    console.log(chalk.yellow(`${key} isn't mapped to a folder here.`));
+  }
 }

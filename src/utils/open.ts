@@ -16,7 +16,10 @@ function launch(command: string, args: string[], hide: boolean): Promise<boolean
   });
 }
 
-export function openBrowser(url: string): Promise<boolean> {
+/**
+ * Open a link in the default browser, or a folder in the file manager
+ */
+export function openWithSystem(url: string): Promise<boolean> {
   if (process.platform === "win32") return launch("cmd", ["/c", "start", "", url], true);
   if (process.platform === "darwin") return launch("open", [url], false);
   return launch("xdg-open", [url], false);
@@ -52,5 +55,5 @@ export async function openApp(url: string): Promise<boolean> {
   if (browser && (await launch(browser, [`--app=${url}`, "--window-size=1000,780"], false))) {
     return true;
   }
-  return openBrowser(url);
+  return openWithSystem(url);
 }

@@ -143,6 +143,45 @@ const PAGE = String.raw`<!doctype html>
     .row.child { padding-left: 22px; }
     .date { display: none; }
   }
+  .settings { margin-top: 16px; }
+  .setting { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 18px; border-top: 1px solid var(--border); }
+  .setting-text { min-width: 0; }
+  .setting-text strong { display: block; font-weight: 600; }
+  .setting-text p { margin: 2px 0 0; color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+  .setting-text a { color: var(--accent); }
+  .setting-text .warn-text { color: var(--warn); }
+  .secondary {
+    background: var(--surface-2); color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 14px; cursor: pointer; white-space: nowrap;
+  }
+  .secondary:hover { background: var(--hover); }
+  .secondary.small { padding: 2px 10px; font-size: 12.5px; }
+  .switch {
+    appearance: none; width: 40px; height: 20px; border-radius: 10px; margin: 0; flex: none;
+    background: var(--border); position: relative; cursor: pointer; transition: background 0.15s;
+  }
+  .switch::after {
+    content: ""; position: absolute; top: 3px; left: 3px; width: 14px; height: 14px; border-radius: 50%;
+    background: #fff; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3); transition: left 0.15s;
+  }
+  .switch:checked { background: var(--accent); }
+  .switch:checked::after { left: 23px; }
+  .mappings { margin: 6px 0 0; padding: 0; list-style: none; }
+  .mappings li { display: flex; gap: 10px; align-items: center; font-size: 13px; padding: 3px 0; overflow-wrap: anywhere; }
+  .mapping-form { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+  .mapping-form input {
+    font: inherit; font-size: 13px; color: var(--text); background: var(--surface-2);
+    border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px; flex: 1 1 180px; min-width: 0;
+  }
+  dialog {
+    border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text);
+    padding: 20px; width: min(460px, calc(100% - 32px)); box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  }
+  dialog::backdrop { background: rgba(0, 0, 0, 0.4); }
+  dialog h2 { margin: 0 0 8px; font-size: 16px; }
+  dialog p { margin: 0 0 18px; color: var(--muted); }
+  .dialog-buttons { display: flex; justify-content: flex-end; gap: 8px; }
+  .primary.danger { background: #c42b1c; color: #fff; }
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { animation: none !important; transition: none !important; }
   }
@@ -184,8 +223,21 @@ const PAGE = String.raw`<!doctype html>
     <div id="tree" role="list"></div>
     <div class="totals" id="totals"></div>
   </section>
+
+  <section class="card settings" aria-labelledby="settings-title">
+    <div class="panel-head"><h2 id="settings-title">Settings</h2></div>
+    <div id="settings"></div>
+  </section>
 </div>
 <div id="toast" role="status" aria-live="polite"></div>
+<dialog id="dialog" aria-labelledby="dialog-title">
+  <h2 id="dialog-title"></h2>
+  <p id="dialog-text"></p>
+  <div class="dialog-buttons">
+    <button type="button" class="secondary" id="dialog-cancel">Cancel</button>
+    <button type="button" class="primary" id="dialog-ok">OK</button>
+  </div>
+</dialog>
 
 <script nonce="__NONCE__">
 (() => {
@@ -325,6 +377,137 @@ const PAGE = String.raw`<!doctype html>
     }
     busy = false;
     render();
+  }
+
+  // Asks before something that can't be undone; resolves to true to go ahead
+  function ask(title, text, confirm, danger) {
+    const dialog = $("dialog");
+    $("dialog-title").textContent = title;
+    $("dialog-text").textContent = text;
+    $("dialog-ok").textContent = confirm;
+    $("dialog-ok").className = "primary" + (danger ? " danger" : "");
+    return new Promise((resolve) => {
+      const done = (answer) => { dialog.close(); resolve(answer); };
+      $("dialog-ok").onclick = () => done(true);
+      $("dialog-cancel").onclick = () => done(false);
+      dialog.oncancel = () => resolve(false);
+      dialog.showModal();
+    });
+  }
+
+  // Runs an action on the server, then shows the state it answers with
+  async function act(path, body, success) {
+    try {
+      state = await api(path, body || {});
+      render();
+      if (success) toast(success);
+      return true;
+    } catch (error) {
+      toast(error.message);
+      refresh();
+      return false;
+    }
+  }
+
+  const button = (label, onclick, extra) =>
+    el("button", { type: "button", class: "secondary" + (extra ? " " + extra : ""), text: label, onclick });
+
+  async function copyKey() {
+    const sure = await ask(
+      "Copy the encryption key?",
+      "With this key and access to your storage, anyone can read every synced conversation. Paste it only into claude-sync on your other computer, then copy something else to clear it from the clipboard.",
+      "Copy key"
+    );
+    if (!sure) return;
+    try {
+      const { key } = await api("/api/key", {});
+      await navigator.clipboard.writeText(key);
+      toast("Encryption key copied to the clipboard");
+    } catch (error) {
+      toast("Couldn't copy the key: " + error.message);
+    }
+  }
+
+  let addingFolder = false;
+  let settingsShown = "";
+
+  function setting(title, description, control) {
+    return el("div", { class: "setting" }, [
+      el("div", { class: "setting-text" }, [el("strong", { text: title })].concat(description)),
+      control,
+    ]);
+  }
+
+  function folderSetting(folders) {
+    const list = folders.length
+      ? el("ul", { class: "mappings" }, folders.map((f) => el("li", {}, [
+          el("span", { text: f.other + " on your other computers is " + f.here + " here" }),
+          button("Remove", () => act("/api/folders/remove", { other: f.other }, "Folder mapping removed"), "small"),
+        ])))
+      : el("p", { text: "Your projects are in the same folders as on your other computers." });
+    const parts = [list];
+
+    if (addingFolder) {
+      const other = el("input", { placeholder: "On your other computers, e.g. ~/Workspace", "aria-label": "Folder on your other computers" });
+      const here = el("input", { placeholder: "On this computer, e.g. D:\\Projects", "aria-label": "Folder on this computer" });
+      const add = async () => {
+        if (await act("/api/folders/add", { other: other.value, here: here.value }, "Folder mapping added")) {
+          addingFolder = false;
+          settingsShown = "";
+          render();
+        }
+      };
+      parts.push(el("div", { class: "mapping-form" }, [other, here, button("Add", add), button("Cancel", () => { addingFolder = false; settingsShown = ""; render(); })]));
+      parts.push(el("p", { text: "Add it before projects from that folder first sync here: conversations already synced to another folder aren't moved." }));
+    }
+    const control = addingFolder ? null : button("Add folder", () => { addingFolder = true; settingsShown = ""; render(); });
+    return setting("Project folders", parts, control);
+  }
+
+  function renderSettings() {
+    const s = state.settings;
+    // Redrawn only when something changed, so a refresh doesn't clear what's being typed
+    const shown = JSON.stringify([s, state.storage, state.storageLink, state.machine]);
+    if (shown === settingsShown) return;
+    settingsShown = shown;
+
+    const storage = state.storageLink
+      ? el("a", { href: state.storageLink, target: "_blank", rel: "noreferrer", text: state.storage })
+      : state.storage;
+
+    const startup = el("input", {
+      type: "checkbox", class: "switch", role: "switch", "aria-label": "Start claude-sync when you log in",
+      onchange: (event) => act("/api/startup", { enabled: event.target.checked },
+        event.target.checked ? "claude-sync will start when you log in" : "claude-sync won't start when you log in"),
+    });
+    startup.checked = s.startAtLogin;
+
+    const hooks = s.hooks;
+    const hooksText = hooks.state === "missing"
+      ? "Off: Claude Code doesn't sync when sessions start and end. Repair turns it on."
+      : hooks.state === "broken"
+        ? "Broken: Claude Code runs " + hooks.missing + ", which no longer exists. Repair points it at this claude-sync."
+        : hooks.otherCopy
+          ? "On, using another copy of claude-sync on this computer. Repair switches to this one."
+          : "On: Claude Code syncs when a session starts and ends.";
+    const hooksOk = hooks.state === "ok" && !hooks.otherCopy;
+
+    const conflicts = s.conflicts === 1 ? "1 copy" : s.conflicts + " copies";
+
+    $("settings").replaceChildren(
+      setting("Storage", [el("p", {}, [storage, " · this computer is " + state.machine])]),
+      setting("Start when you log in", [el("p", { text: "Shows the claude-sync icon every time you log in." })], startup),
+      setting("Sync with Claude Code", [el("p", { class: hooksOk ? "" : "warn-text", text: hooksText })],
+        hooksOk ? null : button("Repair", () => act("/api/hooks", {}, "Claude Code will sync when sessions start and end"))),
+      setting("Encryption key", [el("p", { text: "Your other computers need it to read your conversations. It's copied without being shown." })],
+        button("Copy key", copyKey)),
+      folderSetting(s.folders),
+      setting("Conflict copies", [el("p", {
+        text: s.conflicts
+          ? conflicts + " set aside when two computers changed the same file. Delete them once you've checked them."
+          : "None: no copies have been set aside.",
+      })], s.conflicts ? button("Open folder", () => act("/api/conflicts/open", {})) : null),
+    );
   }
 
   function fatal(message) {
@@ -509,6 +692,7 @@ const PAGE = String.raw`<!doctype html>
     renderStatus();
     renderTree();
     renderTotals();
+    renderSettings();
   }
 
   if (!token) {
