@@ -34,9 +34,7 @@ Claude Code's hooks run a sync when a session starts and when it ends, and `/res
 
 You need [Node.js](https://nodejs.org) 18 or later, and [Git](https://git-scm.com) to keep your sessions in a Git repository.
 
-### With the desktop app
-
-The easiest way to start. Download this repository (**Code → Download ZIP**, or `git clone`) and double-click the installer for your system:
+Download this repository (**Code → Download ZIP**, or `git clone`) and double-click the installer for your system:
 
 | Windows | macOS | Linux |
 |---------|-------|-------|
@@ -53,30 +51,7 @@ npm install -g @chronicideas/claude-sync
 claude-sync install --tray
 ```
 
-### In the terminal
-
-For a server, a machine without a desktop, or if you'd rather not have the icon:
-
-```bash
-# Install
-npm install -g @chronicideas/claude-sync
-
-# Initialize with your storage backend
-claude-sync init --git https://github.com/yourusername/claude-sessions-private
-# or
-claude-sync init --s3 my-bucket --region us-west-2
-# or
-claude-sync init --gcs my-gcs-bucket
-# or
-claude-sync init --r2 my-r2-bucket
-
-# Install Claude Code hooks
-claude-sync install --global
-
-# Done! Sessions will sync automatically
-```
-
-Both work the same underneath, so you can add the icon later with `claude-sync install --tray`.
+Setting up a server, or rather not have the icon? Everything also works [from the terminal](#terminal-setup).
 
 ## Desktop App
 
@@ -170,6 +145,31 @@ Every sync pulls before it pushes, so a push never silently overwrites another m
 - A project's memory index (`memory/MEMORY.md`) is merged line by line instead, so memories added on both machines are all listed.
 
 The session that is currently open is never overwritten by a hook, nor uploaded by one over a copy with a more recent message; it is reconciled on the next sync after it closes. Deletions are not synced, so Claude Code's cleanup of old transcripts on one machine doesn't remove them anywhere else.
+
+## Terminal Setup
+
+For a server, a machine without a desktop, or if you'd rather not have the icon:
+
+```bash
+# Install
+npm install -g @chronicideas/claude-sync
+
+# Initialize with your storage backend
+claude-sync init --git https://github.com/yourusername/claude-sessions-private
+# or
+claude-sync init --s3 my-bucket --region us-west-2
+# or
+claude-sync init --gcs my-gcs-bucket
+# or
+claude-sync init --r2 my-r2-bucket
+
+# Install Claude Code hooks
+claude-sync install --global
+
+# Done! Sessions will sync automatically
+```
+
+The terminal and the desktop app work the same underneath, so you can add the icon later with `claude-sync install --tray`.
 
 ## Commands
 
