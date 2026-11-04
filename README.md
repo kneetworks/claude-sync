@@ -19,115 +19,37 @@ Claude Code stores conversations locally. When you switch machines, your convers
 - **Your storage** - Use your own private Git repo, AWS S3, Google Cloud Storage, Cloudflare R2, or any S3-compatible service
 - **Zero trust** - We never see your conversations or encryption keys
 - **Automatic** - Hooks into Claude Code's session lifecycle
-- **Incremental** - Only files changed since the last sync are uploaded, in one commit per sync
-- **Like a desktop sync app** - An icon in the notification area shows when it's syncing, and a dashboard lets you choose what syncs on each machine
+- **Incremental** - Only files changed since the last sync are uploaded
+- **Optional desktop app** - A notification area icon and a dashboard, on Windows, macOS and Linux
 
-## Getting Started
-
-You need [Node.js](https://nodejs.org) 18 or later, and [Git](https://git-scm.com) if your storage is a Git repository.
-
-### With the installer
-
-Download this repository (**Code → Download ZIP**, then unzip it) or clone it, then open the installer for your system:
-
-| System | Installer |
-|--------|-----------|
-| Windows | Double-click `install-windows.cmd` |
-| macOS | Double-click `install-macos.command` |
-| Linux | Run `./install-linux.sh`, or double-click it and choose **Run in Terminal** |
-
-It builds claude-sync and makes `claude-sync` a command. Then it asks where to keep your sessions (and, on another machine, for your encryption key and where your projects are), runs the first sync, and puts claude-sync in the notification area, where it starts every time you log in. To update claude-sync, get the new version of the folder and run the installer again.
-
-The first time, your system may warn about running a script from the internet: on Windows, choose **More info → Run anyway**; on macOS, allow it in **System Settings → Privacy & Security**.
-
-### From the command line
-
-The commands are the same in PowerShell, Command Prompt, Git Bash, and macOS and Linux terminals.
-
-**1. Install claude-sync**
+## Quick Start
 
 ```bash
+# Install
 npm install -g @chronicideas/claude-sync
-```
 
-**2. Connect your storage**, a private repository here (or a bucket: see [Storage Backends](#storage-backends)). On your first machine this also creates the encryption key:
-
-```bash
+# Initialize with your storage backend
 claude-sync init --git https://github.com/yourusername/claude-sessions-private
+# or
+claude-sync init --s3 my-bucket --region us-west-2
+# or
+claude-sync init --gcs my-gcs-bucket
+# or
+claude-sync init --r2 my-r2-bucket
+
+# Install Claude Code hooks
+claude-sync install --global
+
+# Done! Sessions will sync automatically
 ```
 
-Every other machine needs that same key, or it couldn't read anything already synced. `init` asks for it (get it with `claude-sync key export` on a machine that's set up), or you can pass it:
+## Dashboard and notification area icon
 
-```bash
-claude-sync init --git <same-repo> --key <base64-key>
-```
+Rather not use the terminal? claude-sync can work like a desktop sync app: an icon in the notification area (the menu bar on macOS) shows when it's syncing, and a dashboard lets you choose which conversations sync on each machine, clean up old ones and change settings. It runs on **Windows, macOS and Linux**, with nothing to install beyond claude-sync.
 
-Keep the key somewhere safe, such as a password manager: it's the only way to read your synced conversations.
+[![The claude-sync dashboard](docs/images/dashboard.png)](docs/dashboard.md)
 
-**3. Sync, and keep syncing automatically**
-
-```bash
-claude-sync sync
-claude-sync install
-```
-
-The first sync uploads or downloads everything, so it can take a while. `install` makes Claude Code sync whenever a session starts and ends, and puts claude-sync in the notification area (the menu bar on macOS), where it starts again every time you log in. From then on you rarely need the terminal.
-
-When it asks for the key, `init` also asks whether this machine keeps its projects in a different folder from your other machines (say `D:\Projects` instead of `~/Workspace`). With `--key`, set that up yourself before the first sync: see [Restoring into the right project](#restoring-into-the-right-project).
-
-## Using claude-sync
-
-### The icon
-
-The icon works like a desktop sync app's, and its small cloud shows how things stand:
-
-| Cloud | Meaning |
-|-------|---------|
-| White | Up to date |
-| Blue | Syncing, whether Claude Code or you started it |
-| Red | The last sync failed or skipped something, such as a transcript too large for the storage. Open the dashboard to see why. |
-
-Click it to open the dashboard; clicking again brings up a fresh dashboard window and closes the old one. Its menu (right-click on Windows) shows the status, **Sync now** and **Quit**. On Windows 11, a new icon starts in the hidden overflow (^): drag it onto the taskbar to keep it in sight.
-
-### Continuing a conversation on another machine
-
-Keep each project in the same place relative to your home folder on every machine (for example `~/Workspace/app`). Close the session where you were working, since Claude Code syncs when a session ends. Then start Claude Code in the same project on the other machine, which syncs as the session starts, and run `/resume`.
-
-### Choosing what syncs
-
-Long sessions can grow to tens of megabytes, and each change uploads the whole encrypted file again. To keep some of them off a machine, click the icon (or run `claude-sync dashboard`).
-
-The dashboard looks like the "choose folders" panel of a desktop sync app: every project and conversation on this machine or in your storage, with its size, last change and sync state, and a checkbox to sync it here or not.
-
-- Unchecked conversations aren't downloaded to this machine or uploaded from it. Your other machines keep syncing them, and the local copy stays where it is.
-- New conversations sync unless you uncheck their whole project. Checking a single conversation inside an unchecked project syncs just that one.
-- The choice is stored in this machine's `~/.claude-sync/config.json`, and takes effect at the next sync (or press **Sync now**).
-
-The page is served on `127.0.0.1` only and needs a one-time link, so other websites and other users can't reach it. It opens in a window of its own when Chrome, Edge, Chromium or Brave is installed, otherwise in your default browser.
-
-### Deleting and cleaning up
-
-Point at a conversation in the dashboard for its **Delete** button: the conversation is deleted from this computer and from your storage. Your other computers keep their own copy, since deletions don't sync, and don't upload it again unless the conversation goes on there. **Clean up…** does the same for every conversation on this computer with no message for a number of days.
-
-Claude Code deletes old transcripts after a while (30 days unless `cleanupPeriodDays` says otherwise). Those stay in your storage and show as "only in storage"; their **Download** button brings one back.
-
-### Settings
-
-The dashboard's Settings cover what otherwise needs the terminal:
-
-- **Storage**: a link to your repository or bucket.
-- **Start when you log in**: whether the icon starts at login (`claude-sync tray --startup` / `--no-startup`).
-- **Sync with Claude Code**: whether Claude Code's hooks are installed and still work. **Repair** reinstalls them (`claude-sync install`), for example after claude-sync moved.
-- **Encryption key**: copies the key to set up another computer (`claude-sync key export`), without showing it.
-- **Project folders**: the folder mappings (`claude-sync folder add` / `remove`).
-- **Conflict copies**: how many copies have been set aside, with a button to open their folder.
-- **Storage history** (git storage): **Compact…** keeps only the current version of each file. A git repository keeps every version ever pushed, and long conversations change often, so it grows much larger than the conversations themselves. Compacting can't be undone. Your other computers pick it up at their next sync without downloading anything; compact on each of them too to free the space their copy takes. Your git host may take a while to reclaim the space.
-
-### About the icon
-
-The icon only uses what each OS already has: PowerShell on Windows, `osascript` on macOS (11 or later for the cloud symbols), and `python3` with GTK and Ayatana AppIndicator on Linux (`sudo apt install gir1.2-ayatanaappindicator3-0.1` on Debian and Ubuntu; GNOME also needs the AppIndicator extension). Problems are logged to `~/.claude-sync/tray/tray.log`.
-
-Over SSH, or on a Linux machine without a desktop, `install` skips the icon and only adds the hooks; `claude-sync status` shows how things stand. To manage the icon yourself, `claude-sync tray` starts it, `claude-sync tray --no-startup` stops it starting at login, and `claude-sync install --no-tray` leaves it out.
+**[See the dashboard and icon →](docs/dashboard.md)**
 
 ## How It Works
 
@@ -176,24 +98,24 @@ Every sync pulls before it pushes, so a push never silently overwrites another m
 - For any other file both sides changed, the local copy is kept and the other copy is saved to `~/.claude-sync/conflicts/`.
 - A project's memory index (`memory/MEMORY.md`) is merged line by line instead, so memories added on both machines are all listed.
 
-The session that is currently open is never overwritten by a hook, nor uploaded by one over a copy with a more recent message; it is reconciled on the next sync after it closes. Deletions are not synced, so Claude Code's cleanup of old transcripts on one machine doesn't remove them anywhere else, and deleting a conversation from the dashboard removes it from that machine and your storage only.
+The session that is currently open is never overwritten by a hook, nor uploaded by one over a copy with a more recent message; it is reconciled on the next sync after it closes. Deletions are not synced, so Claude Code's cleanup of old transcripts on one machine doesn't remove them anywhere else.
 
 ## Commands
 
 | Command | Description |
 |---------|-------------|
 | `claude-sync init` | Set up storage backend and encryption key (`--key <base64>` to reuse your other machine's) |
+| `claude-sync install` | Add hooks to Claude Code for automatic sync |
 | `claude-sync sync` | Pull remote changes, then push local changes |
-| `claude-sync push` | Same as `sync` |
+| `claude-sync push` | Same as `sync`: remote changes are always pulled first |
 | `claude-sync pull` | Pull only (`--all` also restores files deleted locally) |
-| `claude-sync install` | Sync automatically: add Claude Code hooks and the notification area icon (`--no-tray` to leave the icon out) |
 | `claude-sync status` | Show configuration and sync status |
-| `claude-sync dashboard` | Choose which conversations sync on this machine, in your browser (`--port`, `--no-open`) |
-| `claude-sync tray` | Show claude-sync in the notification area (`--startup` to also start it at login, `--no-startup` to stop that) |
 | `claude-sync folder add <other> <here>` | Keep projects from `<other>` on your other machines (e.g. `~/Workspace`) in `<here>` on this one |
 | `claude-sync folder remove <other>` | Undo `folder add` |
 | `claude-sync key export` | Print the encryption key as base64 |
 | `claude-sync key import <base64>` | Use an existing encryption key |
+| `claude-sync dashboard` | Open the [dashboard](docs/dashboard.md) in your browser |
+| `claude-sync tray` | Show the [notification area icon](docs/dashboard.md) (`--startup` to start it at login) |
 
 ## Storage Backends
 
@@ -239,7 +161,7 @@ claude-sync init --s3 my-bucket --endpoint https://minio.example.com --region us
 
 ### Interactive Setup
 
-Just run `claude-sync init` without flags for an interactive wizard that guides you through setup.
+Just run `claude-sync init` without flags for an interactive wizard that guides you through setup. When the storage already has synced sessions, it asks for the key they were encrypted with.
 
 ## Security
 
@@ -340,6 +262,23 @@ claude-sync key import YOUR_BASE64_KEY
 
 With `--hook`, claude-sync reads the session ID Claude Code passes on stdin, prints nothing to stdout (SessionStart output would be added to Claude's context), and never fails the session: errors go to stderr. Re-running `claude-sync install` replaces earlier claude-sync hooks and keeps your other hooks.
 
+## Setting Up on a New Machine
+
+1. Clone your projects to the same place relative to your home directory (e.g. `~/code/app`), or [map the folder](#restoring-into-the-right-project)
+2. Install claude-sync: `npm install -g @chronicideas/claude-sync`
+3. Initialize with the same backend and your existing key:
+   ```bash
+   # On your existing machine
+   claude-sync key export
+
+   # On the new machine
+   claude-sync init --git <same-repo> --key <base64-key>
+   ```
+4. Pull existing sessions: `claude-sync sync`
+5. Install hooks: `claude-sync install --global`
+
+Then open Claude Code in the project and run `/resume`. Sync runs when a session starts and ends, so close a session on one machine before continuing it on another.
+
 ## Development
 
 ```bash
@@ -347,30 +286,18 @@ With `--hook`, claude-sync reads the session ID Claude Code passes on stdin, pri
 git clone https://github.com/kneetworks/claude-sync
 cd claude-sync
 
-# Install dependencies (npx runs pnpm without installing it globally)
-npx pnpm@9.15.0 install --frozen-lockfile
+# Install dependencies
+pnpm install
 
 # Build
-npx pnpm@9.15.0 build
+pnpm build
 
 # Test
-npx pnpm@9.15.0 test
+pnpm test
 
 # Run locally
 node dist/cli.js status
 ```
-
-`node dist/cli.js` only works from this folder. To use your build as `claude-sync` in every shell, run the [installer](#with-the-installer), or install it the way a release is installed and point the hooks and the icon at that copy:
-
-```bash
-npm pack                                            # prints the file name, e.g. chronicideas-claude-sync-0.1.0.tgz
-npm install -g ./chronicideas-claude-sync-0.1.0.tgz
-claude-sync install
-```
-
-Repeat these after each build.
-
-The tray icon is drawn from `assets/tray-icon.svg`. After changing it, run `powershell -NoProfile -ExecutionPolicy Bypass -STA -File scripts/render-tray-icons.ps1` on Windows to regenerate the PNGs in `src/tray/icons.ts`; the cloud (the path with `id="badge"`) is recoloured for each state.
 
 ## Roadmap
 
@@ -378,7 +305,7 @@ The tray icon is drawn from `assets/tray-icon.svg`. After changing it, run `powe
 - [x] S3/GCS/R2 backend support
 - [x] Parallel encryption and batch uploads
 - [x] Encryption validation (prevent plaintext leaks)
-- [x] Selective sync (by project or conversation)
+- [x] Selective sync (by project or conversation, from the [dashboard](docs/dashboard.md))
 - [ ] Session search across machines
 - [ ] Team sharing (shared encryption keys)
 - [ ] Conflict resolution for concurrent edits
