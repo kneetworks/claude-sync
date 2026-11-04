@@ -16,7 +16,8 @@ import { isAutostartEnabled, setStartAtLogin } from "../tray/autostart.js";
 import { runningTray } from "../tray/instance.js";
 import { addFolderMapping, removeFolderMapping } from "./folder.js";
 import { hooksStatus, installHooks } from "./install.js";
-import { CONFLICTS_DIR, syncSilently, type SyncResult } from "./sync.js";
+import { CONFLICTS_DIR, deleteConversations, syncSilently, type SyncResult } from "./sync.js";
+import { isSafeRemotePath } from "../utils/sessions.js";
 import { dashboardPage } from "./dashboard-page.js";
 
 interface DashboardOptions {
@@ -34,7 +35,9 @@ export interface DashboardServer {
   isSyncing(): boolean;
 }
 
-const MAX_BODY = 64 * 1024;
+// Bulk deletes send many keys
+const MAX_BODY = 1024 * 1024;
+const SESSION_KEY = /^[^/\\]+\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 class HttpError extends Error {
   constructor(
@@ -119,6 +122,15 @@ export async function startDashboardServer(config: Config, port = 0): Promise<Da
     if (typeof value !== "string" || !value.trim()) throw new HttpError(400, `Expected ${name}`);
     return value.trim();
   };
+  // "<project>/<session id>", which deleting turns into paths: nothing else gets through
+  const conversationKeys = (value: unknown): string[] => {
+    const valid = (key: unknown) =>
+      typeof key === "string" && SESSION_KEY.test(key) && isSafeRemotePath(`${key}.jsonl`);
+    if (!Array.isArray(value) || value.length === 0 || !value.every(valid)) {
+      throw new HttpError(400, "Expected { keys: [conversations] }");
+    }
+    return value;
+  };
 
   // Each action changes something, then the page gets the new state, plus anything
   // the action returns
@@ -158,6 +170,13 @@ export async function startDashboardServer(config: Config, port = 0): Promise<Da
       await fs.mkdir(CONFLICTS_DIR, { recursive: true });
       await openWithSystem(CONFLICTS_DIR);
     }],
+    // Bring back conversations deleted here after they synced
+    ["/api/restore", async ({ keys }) => {
+      const conversations = conversationKeys(keys);
+      await syncing?.catch(() => {});
+      return { result: await syncSilently(conversations) };
+    }],
+    ["/api/delete", async ({ keys }) => ({ result: await deleteConversations(conversationKeys(keys)) })],
   ]);
 
   async function handle(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {

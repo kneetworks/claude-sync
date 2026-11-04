@@ -71,6 +71,15 @@ describe("summarizeTranscript", () => {
     expect(title.endsWith("…")).toBe(true);
   });
 
+  it("dates the latest message, not the bookkeeping written after it", () => {
+    const head = [prompt("hi", { timestamp: "2026-01-01T10:00:00Z" })];
+    const tail = [
+      line({ type: "assistant", timestamp: "2026-01-01T10:05:00Z" }),
+      line({ type: "cost-state", timestamp: "2026-01-02T00:00:00Z" }),
+    ];
+    expect(summarizeTranscript(head, tail).lastMessage).toBe(Date.parse("2026-01-01T10:05:00Z"));
+  });
+
   it("returns nothing for a transcript without titles or prompts", () => {
     expect(summarizeTranscript([], [])).toEqual({ title: undefined, cwds: [] });
   });

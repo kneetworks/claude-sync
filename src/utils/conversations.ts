@@ -32,6 +32,8 @@ export interface ConversationInfo {
   size: number;
   /** Last change on this machine (ms since epoch) */
   modified?: number;
+  /** When its latest message was written, if its transcript is on this machine */
+  lastMessage?: number;
   sync: boolean;
   state: SyncState;
 }
@@ -65,6 +67,8 @@ export interface DashboardState {
 
 export interface TranscriptSummary {
   title?: string;
+  /** When the latest message seen was written (ms since epoch) */
+  lastMessage?: number;
   /** Working directories recorded in the transcript, latest first */
   cwds: string[];
 }
@@ -150,8 +154,14 @@ export function summarizeTranscript(head: string[], tail: string[]): TranscriptS
     latest((r) => r.type === "last-prompt" && r.lastPrompt) ??
     typed[0]?.text;
 
+  const times = records
+    .filter((r) => r.type === "user" || r.type === "assistant")
+    .map((r) => Date.parse(String(r.timestamp)))
+    .filter((time) => !Number.isNaN(time));
+
   return {
     title: title && oneLine(title),
+    lastMessage: times.length > 0 ? Math.max(...times) : undefined,
     cwds: [...new Set(records.flatMap((r) => text(r.cwd) ?? []).reverse())],
   };
 }
@@ -308,6 +318,7 @@ export async function loadDashboardState(
         title: summary.title,
         size: sum(group),
         modified,
+        lastMessage: summary.lastMessage,
         sync: isSelected(`${key}.jsonl`, config.selection),
         state: mostUrgent(group.map((f) => f.state)),
       });

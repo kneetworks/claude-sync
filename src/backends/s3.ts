@@ -3,6 +3,7 @@ import {
   PutObjectCommand,
   GetObjectCommand,
   ListObjectsV2Command,
+  DeleteObjectCommand,
 } from "@aws-sdk/client-s3";
 import type { Backend, RemoteFile } from "./index.js";
 import { assertEncrypted } from "../crypto/encrypt.js";
@@ -107,6 +108,15 @@ export function createS3Backend(config: S3Config): Backend {
       );
 
       if (response.ETag) uploaded.set(remotePath, response.ETag);
+    },
+
+    async delete(remotePath: string): Promise<void> {
+      await client.send(
+        new DeleteObjectCommand({
+          Bucket: config.bucket,
+          Key: getKey(remotePath),
+        })
+      );
     },
 
     async commit(): Promise<Map<string, string>> {

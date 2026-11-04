@@ -17,6 +17,8 @@ export interface Backend {
   get(path: string): Promise<Buffer>;
   /** Stage (git) or upload (S3) one encrypted file */
   put(path: string, encryptedData: Buffer): Promise<void>;
+  /** Stage (git) or make (S3) the removal of one stored file */
+  delete(path: string): Promise<void>;
   /** Publish everything put since list(); returns the new version of each put path */
   commit(message: string): Promise<Map<string, string>>;
   /** Largest encrypted file the storage accepts, if it has a limit */

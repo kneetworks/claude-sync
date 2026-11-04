@@ -111,6 +111,12 @@ export function createGitBackend(): Backend {
       staged.add(remotePath);
     },
 
+    async delete(remotePath: string): Promise<void> {
+      // commit() stages every change under FILES_DIR, removals included
+      await fs.rm(filePath(remotePath), { force: true });
+      staged.add(remotePath);
+    },
+
     async commit(message: string): Promise<Map<string, string>> {
       const versions = new Map<string, string>();
       if (staged.size === 0) return versions;

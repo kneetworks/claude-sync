@@ -88,7 +88,7 @@ const PAGE = String.raw`<!doctype html>
   }
   .toolbar input { flex: 1 1 220px; min-width: 0; }
   .row {
-    display: grid; grid-template-columns: 26px 26px minmax(0, 1fr) 116px 72px 26px;
+    display: grid; grid-template-columns: 26px 26px minmax(0, 1fr) 116px 72px 26px 54px;
     align-items: center; gap: 4px; padding: 6px 14px 6px 10px; min-height: 46px;
     border-bottom: 1px solid var(--border);
   }
@@ -139,10 +139,27 @@ const PAGE = String.raw`<!doctype html>
   .spin { animation: spin 1s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
   @media (max-width: 640px) {
-    .row { grid-template-columns: 24px 24px minmax(0, 1fr) 60px 22px; padding-right: 10px; }
+    .row { grid-template-columns: 24px 24px minmax(0, 1fr) 60px 22px 54px; padding-right: 10px; }
     .row.child { padding-left: 22px; }
     .date { display: none; }
   }
+  .actions { display: flex; justify-content: flex-end; gap: 2px; opacity: 0; transition: opacity 0.1s; }
+  .row:hover .actions, .row:focus-within .actions { opacity: 1; }
+  @media (hover: none) { .actions { opacity: 1; } }
+  .icon-button {
+    border: 0; background: none; color: var(--muted); width: 24px; height: 24px; border-radius: 4px;
+    display: grid; place-items: center; cursor: pointer; padding: 0;
+  }
+  .icon-button:hover { background: var(--border); color: var(--text); }
+  .icon-button.danger:hover { color: var(--err); }
+  .icon-button svg { width: 15px; height: 15px; }
+  .cleanup { margin: -6px 0 18px; }
+  .cleanup label { display: flex; align-items: center; gap: 8px; }
+  .cleanup input {
+    width: 80px; font: inherit; color: var(--text); background: var(--surface-2);
+    border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px;
+  }
+  dialog .cleanup p { margin: 10px 0 0; color: var(--text); font-weight: 600; }
   .settings { margin-top: 16px; }
   .setting { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 18px; border-top: 1px solid var(--border); }
   .setting-text { min-width: 0; }
@@ -219,6 +236,7 @@ const PAGE = String.raw`<!doctype html>
         <option value="size">Largest</option>
         <option value="name">Name</option>
       </select>
+      <button type="button" class="secondary" id="clean-up">Clean up…</button>
     </div>
     <div id="tree" role="list"></div>
     <div class="totals" id="totals"></div>
@@ -233,6 +251,7 @@ const PAGE = String.raw`<!doctype html>
 <dialog id="dialog" aria-labelledby="dialog-title">
   <h2 id="dialog-title"></h2>
   <p id="dialog-text"></p>
+  <div id="dialog-extra"></div>
   <div class="dialog-buttons">
     <button type="button" class="secondary" id="dialog-cancel">Cancel</button>
     <button type="button" class="primary" id="dialog-ok">OK</button>
@@ -263,6 +282,7 @@ const PAGE = String.raw`<!doctype html>
     chat: svg('<path d="M2.5 3.8c0-.7.6-1.3 1.3-1.3h8.4c.7 0 1.3.6 1.3 1.3v5.9c0 .7-.6 1.3-1.3 1.3H6.5L3.8 13.4V11h0c-.7 0-1.3-.6-1.3-1.3z"/>', 'fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"'),
     memory: svg('<path d="M4 1.8h5.5L12.5 5v9.2H4z"/><path d="M9.3 1.8V5h3.2M6 8h4.5M6 10.5h4.5"/>', 'fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"'),
     chevron: svg('<path d="M6 3.5 10.5 8 6 12.5"/>', 'fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"'),
+    trash: svg('<path d="M2.8 4.3h10.4M6.3 4.3V2.8h3.4v1.5M4.3 4.3l.6 8.9h6.2l.6-8.9M6.7 6.9v4.1M9.3 6.9v4.1"/>', line),
   };
   const STATES = {
     "synced": { label: "Up to date", tone: "ok", icon: "synced" },
@@ -379,20 +399,100 @@ const PAGE = String.raw`<!doctype html>
     render();
   }
 
-  // Asks before something that can't be undone; resolves to true to go ahead
-  function ask(title, text, confirm, danger) {
+  // Asks before something that can't be undone; resolves to true to go ahead. The
+  // extra element goes under the text, and opened() runs once the dialog shows.
+  function ask(title, text, confirm, danger, extra, opened) {
     const dialog = $("dialog");
     $("dialog-title").textContent = title;
     $("dialog-text").textContent = text;
+    $("dialog-extra").replaceChildren(...(extra ? [extra] : []));
     $("dialog-ok").textContent = confirm;
     $("dialog-ok").className = "primary" + (danger ? " danger" : "");
+    $("dialog-ok").disabled = false;
     return new Promise((resolve) => {
       const done = (answer) => { dialog.close(); resolve(answer); };
       $("dialog-ok").onclick = () => done(true);
       $("dialog-cancel").onclick = () => done(false);
       dialog.oncancel = () => resolve(false);
       dialog.showModal();
+      if (opened) opened();
     });
+  }
+
+  // Runs a long action with the status card saying what's happening
+  async function working(label, action) {
+    busy = label;
+    render();
+    try {
+      return await action();
+    } finally {
+      busy = false;
+      render();
+    }
+  }
+
+  async function remove(conversations) {
+    const keys = conversations.map((c) => c.key);
+    try {
+      state = await working("Deleting…", () => api("/api/delete", { keys }));
+      const result = state.result;
+      if (result.busy) toast("A sync is running. Try again when it finishes.");
+      else if (result.deleted && result.error) toast("Deleted " + plural(result.deleted, "conversation") + ". " + result.error);
+      else if (result.error) toast(result.error);
+      else toast("Deleted " + plural(result.deleted, "conversation"));
+    } catch (error) {
+      toast("Couldn't delete: " + error.message);
+    }
+    render();
+  }
+
+  async function deleteOne(conversation) {
+    const sure = await ask(
+      "Delete this conversation?",
+      "“" + conversationLabel(conversation) + "” will be deleted from this computer and from your storage. Your other computers keep their own copy. If it's open in Claude Code, close it first.",
+      "Delete", true
+    );
+    if (sure) await remove([conversation]);
+  }
+
+  async function restore(conversation) {
+    try {
+      state = await working("Downloading…", () => api("/api/restore", { keys: [conversation.key] }));
+      const result = state.result;
+      if (result.busy) toast("A sync is running. Try again when it finishes.");
+      else if (result.error) toast("Couldn't download: " + result.error);
+      else toast("Downloaded “" + conversationLabel(conversation) + "”");
+    } catch (error) {
+      toast("Couldn't download: " + error.message);
+    }
+    render();
+  }
+
+  async function cleanUp() {
+    const days = el("input", { type: "number", min: "1", value: "90", "aria-label": "Days" });
+    const summary = el("p");
+    const candidates = () => {
+      const cutoff = Date.now() - Math.max(1, Number(days.value) || 0) * 86400000;
+      // Only conversations on this computer, whose messages can be dated
+      return state.projects.flatMap((p) => p.conversations)
+        .filter((c) => c.state !== "online" && (c.lastMessage || c.modified || Infinity) < cutoff);
+    };
+    const update = () => {
+      const list = candidates();
+      summary.textContent = list.length ? plural(list.length, "conversation") + " · " + bytes(total(list)) : "No conversations that old.";
+      $("dialog-ok").textContent = list.length ? "Delete " + plural(list.length, "conversation") : "Delete";
+      $("dialog-ok").disabled = list.length === 0;
+    };
+    days.addEventListener("input", update);
+
+    const sure = await ask(
+      "Clean up old conversations",
+      "Deletes the conversations on this computer whose latest message is older than this, here and from your storage. Your other computers keep their own copies.",
+      "Delete", true,
+      el("div", { class: "cleanup" }, [el("label", {}, ["No message for", days, "days"]), summary]),
+      update
+    );
+    if (sure) await remove(candidates());
   }
 
   // Runs an action on the server, then shows the state it answers with
@@ -526,7 +626,7 @@ const PAGE = String.raw`<!doctype html>
     const result = state.lastSync;
     let icon, tone, title;
 
-    if (busy || state.syncing) [icon, tone, title] = ["sync", "accent spin", "Syncing…"];
+    if (busy || state.syncing) [icon, tone, title] = ["sync", "accent spin", typeof busy === "string" ? busy : "Syncing…"];
     else if (result && result.error) [icon, tone, title] = ["warn", "err", "The last sync failed"];
     else if (tooBig) [icon, tone, title] = ["warn", "warn", plural(tooBig, "conversation") + " too large to upload"];
     else if (pending) [icon, tone, title] = ["sync", "accent", plural(pending, "conversation") + " waiting to sync"];
@@ -551,7 +651,7 @@ const PAGE = String.raw`<!doctype html>
     }
     $("status").replaceChildren(el("span", { class: "big " + tone, icon }), body);
     $("sync-now").disabled = busy || state.syncing;
-    $("sync-now").textContent = busy || state.syncing ? "Syncing…" : "Sync now";
+    $("sync-now").textContent = typeof busy === "string" ? busy : busy || state.syncing ? "Syncing…" : "Sync now";
   }
 
   function projectRow(project, open) {
@@ -591,6 +691,7 @@ const PAGE = String.raw`<!doctype html>
       el("span", { class: "date", text: when(project.modified) }),
       el("span", { class: "size", text: bytes(project.size) }),
       stateIcon(project.state),
+      el("span"),
     ]);
   }
 
@@ -612,6 +713,13 @@ const PAGE = String.raw`<!doctype html>
       el("span", { class: "date", text: when(conversation.modified) }),
       el("span", { class: "size", text: bytes(conversation.size) }),
       stateIcon(conversation.state),
+      el("span", { class: "actions" }, [
+        // Synced here once, then removed by Claude Code's cleanup or by hand
+        conversation.sync && conversation.state === "online"
+          ? el("button", { type: "button", class: "icon-button", title: "Download to this computer", "aria-label": "Download " + label, icon: "download", onclick: () => restore(conversation) })
+          : null,
+        el("button", { type: "button", class: "icon-button danger", title: "Delete", "aria-label": "Delete " + label, icon: "trash", onclick: () => deleteOne(conversation) }),
+      ]),
     ]);
   }
 
@@ -632,6 +740,7 @@ const PAGE = String.raw`<!doctype html>
       el("span", { class: "date" }),
       el("span", { class: "size", text: bytes(other.size) }),
       stateIcon(other.state),
+      el("span"),
     ]);
   }
 
@@ -709,6 +818,7 @@ const PAGE = String.raw`<!doctype html>
   }
 
   $("sync-now").addEventListener("click", syncNow);
+  $("clean-up").addEventListener("click", cleanUp);
   for (const id of ["search", "filter", "sort"]) $(id).addEventListener("input", render);
   // Hooks sync in the background as sessions start and end
   setInterval(() => { if (!busy && document.visibilityState === "visible") refresh(); }, 15000);

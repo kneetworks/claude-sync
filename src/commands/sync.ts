@@ -9,6 +9,7 @@ import { getBackend, type Backend } from "../backends/index.js";
 import { loadConfig } from "../utils/config.js";
 import {
   loadManifest,
+  loadRemoteIndex,
   saveLastSync,
   saveManifest,
   saveRemoteIndex,
@@ -23,7 +24,7 @@ import {
   resolve,
   sha256,
 } from "../utils/merge.js";
-import { isSelected } from "../utils/selection.js";
+import { conversationKey, isSelected } from "../utils/selection.js";
 import {
   belongsToSession,
   findLocalFiles,
@@ -37,6 +38,8 @@ export const CONFLICTS_DIR = path.join(homedir(), ".claude-sync", "conflicts");
 interface SyncOptions {
   /** Also restore files deleted locally after they were synced */
   all?: boolean;
+  /** Restore these conversations ("<project>/<session id>") the same way */
+  restore?: string[];
   /** Running from a Claude Code hook: quiet, and never fails the session */
   hook?: boolean;
   /** Print nothing and leave reporting to the caller (the dashboard) */
@@ -194,8 +197,9 @@ async function run(options: SyncOptions, push: boolean): Promise<SyncResult> {
 
       const entry = manifest[file.path];
       const localPath = toLocalPath(file.path, homedir(), folders);
+      const restore = options.all || !!options.restore?.includes(conversationKey(file.path));
       const restoreMissing =
-        options.all && !(await fs.access(localPath).then(() => true, () => false));
+        restore && !(await fs.access(localPath).then(() => true, () => false));
       if (entry?.v === file.version && !restoreMissing) continue;
 
       const remote = await fetchRemote(backend, file.path);
@@ -379,6 +383,72 @@ export async function pull(options: SyncOptions): Promise<void> {
 /**
  * Sync without printing anything, for the dashboard's "Sync now"
  */
-export function syncSilently(): Promise<SyncResult> {
-  return run({ silent: true }, true);
+export function syncSilently(restore?: string[]): Promise<SyncResult> {
+  return run({ silent: true, restore }, true);
+}
+
+export interface DeleteResult {
+  deleted: number;
+  /** Another sync held the lock, so nothing was deleted */
+  busy?: boolean;
+  error?: string;
+}
+
+/**
+ * Delete conversations ("<project>/<session id>") from this machine and from the
+ * storage. Other machines keep their own copies, since deletions don't sync, and
+ * don't upload them again unless the conversation goes on there.
+ */
+export async function deleteConversations(keys: string[]): Promise<DeleteResult> {
+  const config = await loadConfig();
+  if (!config?.initialized) return { deleted: 0, error: "claude-sync not initialized" };
+  const release = await acquireLock();
+  if (!release) return { deleted: 0, busy: true };
+
+  const folders = toFolderMappings(config.folders);
+  const removed = new Set<string>();
+  try {
+    // This machine first: if a file can't be deleted (Claude Code may have it open),
+    // its stored copy is kept too
+    for (const key of new Set(keys)) {
+      try {
+        await fs.rm(toLocalPath(`${key}.jsonl`, homedir(), folders), { force: true });
+        await fs.rm(toLocalPath(key, homedir(), folders), { recursive: true, force: true });
+        removed.add(key);
+      } catch {
+        // Counted below
+      }
+    }
+    const kept = new Set(keys).size - removed.size;
+    const keptNote = kept ? `${kept} couldn't be deleted on this computer; close them in Claude Code first` : undefined;
+    if (removed.size === 0) return { deleted: 0, error: keptNote };
+
+    const backend = await getBackend(config);
+    for (const file of await backend.list()) {
+      if (removed.has(conversationKey(file.path))) await backend.delete(file.path);
+    }
+    await backend.commit(`delete: ${removed.size} conversation(s)`);
+
+    // Forgotten only now: had the storage refused, the manifest would still keep the
+    // next sync from bringing back what was deleted here
+    const manifest = await loadManifest();
+    const index = await loadRemoteIndex();
+    for (const remotePath of Object.keys(manifest)) {
+      if (removed.has(conversationKey(remotePath))) delete manifest[remotePath];
+    }
+    for (const remotePath of Object.keys(index?.files ?? {})) {
+      if (removed.has(conversationKey(remotePath))) delete index!.files[remotePath];
+    }
+    await saveManifest(manifest);
+    if (index) await saveRemoteIndex(index);
+
+    return { deleted: removed.size, error: keptNote };
+  } catch (caught) {
+    return {
+      deleted: 0,
+      error: `Deleted on this computer, but not from your storage: ${errorMessage(caught)}`,
+    };
+  } finally {
+    await release();
+  }
 }
