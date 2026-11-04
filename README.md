@@ -105,6 +105,24 @@ The dashboard looks like the "choose folders" panel of a desktop sync app: every
 
 The page is served on `127.0.0.1` only and needs a one-time link, so other websites and other users can't reach it. It opens in a window of its own when Chrome, Edge, Chromium or Brave is installed, otherwise in your default browser.
 
+### Deleting and cleaning up
+
+Point at a conversation in the dashboard for its **Delete** button: the conversation is deleted from this computer and from your storage. Your other computers keep their own copy, since deletions don't sync, and don't upload it again unless the conversation goes on there. **Clean up…** does the same for every conversation on this computer with no message for a number of days.
+
+Claude Code deletes old transcripts after a while (30 days unless `cleanupPeriodDays` says otherwise). Those stay in your storage and show as "only in storage"; their **Download** button brings one back.
+
+### Settings
+
+The dashboard's Settings cover what otherwise needs the terminal:
+
+- **Storage**: a link to your repository or bucket.
+- **Start when you log in**: whether the icon starts at login (`claude-sync tray --startup` / `--no-startup`).
+- **Sync with Claude Code**: whether Claude Code's hooks are installed and still work. **Repair** reinstalls them (`claude-sync install`), for example after claude-sync moved.
+- **Encryption key**: copies the key to set up another computer (`claude-sync key export`), without showing it.
+- **Project folders**: the folder mappings (`claude-sync folder add` / `remove`).
+- **Conflict copies**: how many copies have been set aside, with a button to open their folder.
+- **Storage history** (git storage): **Compact…** keeps only the current version of each file. A git repository keeps every version ever pushed, and long conversations change often, so it grows much larger than the conversations themselves. Compacting can't be undone. Your other computers pick it up at their next sync without downloading anything; compact on each of them too to free the space their copy takes. Your git host may take a while to reclaim the space.
+
 ### About the icon
 
 The icon only uses what each OS already has: PowerShell on Windows, `osascript` on macOS (11 or later for the cloud symbols), and `python3` with GTK and Ayatana AppIndicator on Linux (`sudo apt install gir1.2-ayatanaappindicator3-0.1` on Debian and Ubuntu; GNOME also needs the AppIndicator extension). Problems are logged to `~/.claude-sync/tray/tray.log`.
@@ -158,7 +176,7 @@ Every sync pulls before it pushes, so a push never silently overwrites another m
 - For any other file both sides changed, the local copy is kept and the other copy is saved to `~/.claude-sync/conflicts/`.
 - A project's memory index (`memory/MEMORY.md`) is merged line by line instead, so memories added on both machines are all listed.
 
-The session that is currently open is never overwritten by a hook, nor uploaded by one over a copy with a more recent message; it is reconciled on the next sync after it closes. Deletions are not synced, so Claude Code's cleanup of old transcripts on one machine doesn't remove them anywhere else.
+The session that is currently open is never overwritten by a hook, nor uploaded by one over a copy with a more recent message; it is reconciled on the next sync after it closes. Deletions are not synced, so Claude Code's cleanup of old transcripts on one machine doesn't remove them anywhere else, and deleting a conversation from the dashboard removes it from that machine and your storage only.
 
 ## Commands
 

@@ -50,6 +50,15 @@ export async function initGitBackend(url: string): Promise<void> {
   await git.fetch("origin");
 }
 
+async function folderSize(dir: string): Promise<number> {
+  let total = 0;
+  for (const entry of await fs.readdir(dir, { withFileTypes: true }).catch(() => [])) {
+    const full = path.join(dir, entry.name);
+    total += entry.isDirectory() ? await folderSize(full) : (await fs.stat(full).catch(() => null))?.size ?? 0;
+  }
+  return total;
+}
+
 /**
  * Map each file under FILES_DIR at HEAD to its blob id and size
  */
@@ -109,6 +118,31 @@ export function createGitBackend(): Backend {
       await fs.mkdir(path.dirname(filePath(remotePath)), { recursive: true });
       await fs.writeFile(filePath(remotePath), encryptedData);
       staged.add(remotePath);
+    },
+
+    async compact() {
+      const before = await folderSize(path.join(SYNC_DIR, ".git"));
+      await git.fetch("origin");
+      const head = (
+        await git.raw(["rev-parse", "--verify", "--quiet", `refs/remotes/origin/${BRANCH}`]).catch(() => "")
+      ).trim();
+      const commits = head ? Number((await git.raw(["rev-list", "--count", head])).trim()) : 0;
+
+      if (commits > 1) {
+        // A commit with the same files and no parents. Encrypted files are stored by
+        // content, so other machines already have every file in it.
+        const tree = (await git.raw(["rev-parse", `${head}^{tree}`])).trim();
+        const commit = (await git.raw(["commit-tree", tree, "-m", "compact: keep only the current files"])).trim();
+        // Refused if another machine pushed since the fetch, so nothing of theirs is lost
+        await git.raw(["push", `--force-with-lease=${BRANCH}:${head}`, "origin", `${commit}:refs/heads/${BRANCH}`]);
+        await git.fetch("origin");
+        await git.raw(["reset", "--hard", `origin/${BRANCH}`]);
+      }
+
+      // Drop the old versions from this machine's copy too
+      await git.raw(["reflog", "expire", "--expire=now", "--all"]);
+      await git.raw(["gc", "--prune=now", "--quiet"]);
+      return { commits, before, after: await folderSize(path.join(SYNC_DIR, ".git")) };
     },
 
     async delete(remotePath: string): Promise<void> {

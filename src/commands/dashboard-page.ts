@@ -594,7 +594,13 @@ const PAGE = String.raw`<!doctype html>
 
     const conflicts = s.conflicts === 1 ? "1 copy" : s.conflicts + " copies";
 
-    $("settings").replaceChildren(
+    const history = s.canCompact
+      ? setting("Storage history", [el("p", {
+          text: "Your git storage keeps every old version of every conversation. Compacting keeps only the current files, in your storage and on this computer. Run it on your other computers afterwards to free the space there too.",
+        })], button("Compact…", compact))
+      : null;
+
+    $("settings").replaceChildren(...[
       setting("Storage", [el("p", {}, [storage, " · this computer is " + state.machine])]),
       setting("Start when you log in", [el("p", { text: "Shows the claude-sync icon every time you log in." })], startup),
       setting("Sync with Claude Code", [el("p", { class: hooksOk ? "" : "warn-text", text: hooksText })],
@@ -607,7 +613,27 @@ const PAGE = String.raw`<!doctype html>
           ? conflicts + " set aside when two computers changed the same file. Delete them once you've checked them."
           : "None: no copies have been set aside.",
       })], s.conflicts ? button("Open folder", () => act("/api/conflicts/open", {})) : null),
+      history,
+    ].filter(Boolean));
+  }
+
+  async function compact() {
+    const sure = await ask(
+      "Compact your storage?",
+      "Keeps only the current version of each file in your storage and drops every older one for good. Your conversations themselves don't change, and your other computers pick it up at their next sync.",
+      "Compact", true
     );
+    if (!sure) return;
+    try {
+      state = await working("Compacting…", () => api("/api/compact", {}));
+      const result = state.result;
+      if (result.busy) toast("A sync is running. Try again when it finishes.");
+      else if (result.error) toast("Couldn't compact: " + result.error);
+      else toast("Compacted: this computer's copy went from " + bytes(result.before) + " to " + bytes(result.after));
+    } catch (error) {
+      toast("Couldn't compact: " + error.message);
+    }
+    render();
   }
 
   function fatal(message) {

@@ -53,9 +53,10 @@ function setUp(name: string) {
   fs.writeFileSync(a.transcript, `${message(1)}\n${message(2)}\n`);
   a.run(["sync"]);
   b.run(["sync"]);
-  const stored = () =>
-    spawnSync("git", ["-C", storage, "ls-tree", "-r", "--name-only", "main"], { encoding: "utf-8" }).stdout.trim();
-  return { a, b, stored };
+  const git = (...args: string[]) => spawnSync("git", ["-C", storage, ...args], { encoding: "utf-8" }).stdout.trim();
+  const stored = () => git("ls-tree", "-r", "--name-only", "main");
+  const commits = () => Number(git("rev-list", "--count", "main"));
+  return { a, b, stored, commits };
 }
 
 const message = (minute: number) =>
@@ -99,6 +100,23 @@ describe.skipIf(!fs.existsSync(CLI))("two machines", () => {
     expect(stored()).not.toContain(SESSION);
     a.run(["sync"]);
     expect(fs.existsSync(a.transcript)).toBe(false);
+  });
+
+  it("compact the storage history without changing its files", { timeout: 120_000 }, () => {
+    const { a, b, stored, commits } = setUp("compact");
+    fs.appendFileSync(a.transcript, `${message(3)}\n`);
+    a.run(["sync"]);
+    const files = stored();
+    expect(commits()).toBeGreaterThan(1);
+
+    expect(a.call("compactStorage")).toMatchObject({ commits: 2 });
+    expect(commits()).toBe(1);
+    expect(stored()).toBe(files);
+
+    // B picks up the new history at its next sync, and then has nothing left to compact
+    b.run(["sync"]);
+    expect(contents(b.transcript)).toContain("message 3");
+    expect(b.call("compactStorage")).toMatchObject({ commits: 1 });
   });
 
   it("restore a conversation removed here after it synced", { timeout: 120_000 }, () => {

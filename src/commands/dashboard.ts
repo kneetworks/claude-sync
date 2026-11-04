@@ -16,7 +16,7 @@ import { isAutostartEnabled, setStartAtLogin } from "../tray/autostart.js";
 import { runningTray } from "../tray/instance.js";
 import { addFolderMapping, removeFolderMapping } from "./folder.js";
 import { hooksStatus, installHooks } from "./install.js";
-import { CONFLICTS_DIR, deleteConversations, syncSilently, type SyncResult } from "./sync.js";
+import { compactStorage, CONFLICTS_DIR, deleteConversations, syncSilently, type SyncResult } from "./sync.js";
 import { isSafeRemotePath } from "../utils/sessions.js";
 import { dashboardPage } from "./dashboard-page.js";
 
@@ -177,6 +177,7 @@ export async function startDashboardServer(config: Config, port = 0): Promise<Da
       return { result: await syncSilently(conversations) };
     }],
     ["/api/delete", async ({ keys }) => ({ result: await deleteConversations(conversationKeys(keys)) })],
+    ["/api/compact", async () => ({ result: await compactStorage() })],
   ]);
 
   async function handle(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {

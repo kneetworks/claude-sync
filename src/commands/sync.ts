@@ -387,6 +387,38 @@ export function syncSilently(restore?: string[]): Promise<SyncResult> {
   return run({ silent: true, restore }, true);
 }
 
+export interface CompactResult {
+  /** Commits the storage history had */
+  commits: number;
+  /** Size of this machine's copy of the storage before and after, in bytes */
+  before: number;
+  after: number;
+  busy?: boolean;
+  error?: string;
+}
+
+/**
+ * Drop the old versions the storage keeps (git only), there and in this machine's
+ * copy. Running it on another machine afterwards frees the space there too.
+ */
+export async function compactStorage(): Promise<CompactResult> {
+  const none = { commits: 0, before: 0, after: 0 };
+  const config = await loadConfig();
+  if (!config?.initialized) return { ...none, error: "claude-sync not initialized" };
+  const release = await acquireLock();
+  if (!release) return { ...none, busy: true };
+
+  try {
+    const backend = await getBackend(config);
+    if (!backend.compact) return { ...none, error: "This storage doesn't keep old versions" };
+    return await backend.compact();
+  } catch (caught) {
+    return { ...none, error: errorMessage(caught) };
+  } finally {
+    await release();
+  }
+}
+
 export interface DeleteResult {
   deleted: number;
   /** Another sync held the lock, so nothing was deleted */

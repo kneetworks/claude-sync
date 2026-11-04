@@ -23,6 +23,12 @@ export interface Backend {
   commit(message: string): Promise<Map<string, string>>;
   /** Largest encrypted file the storage accepts, if it has a limit */
   maxFileSize?: number;
+  /**
+   * Drop old versions, for storage that keeps them (git): the history becomes one
+   * commit of the current files. Returns how many commits it had, and the size of
+   * this machine's copy before and after.
+   */
+  compact?(): Promise<{ commits: number; before: number; after: number }>;
 }
 
 export interface Config {
