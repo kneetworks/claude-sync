@@ -7,6 +7,7 @@ import { install } from "./commands/install.js";
 import { status } from "./commands/status.js";
 import { keyExport, keyImport } from "./commands/key.js";
 import { folderAdd, folderRemove } from "./commands/folder.js";
+import { dashboard } from "./commands/dashboard.js";
 
 const program = new Command();
 
@@ -57,6 +58,13 @@ program
   .command("status")
   .description("Show sync status and configuration")
   .action(status);
+
+program
+  .command("dashboard")
+  .description("Choose which conversations sync on this machine, in your browser")
+  .option("--port <port>", "Port to listen on (default: any free port)")
+  .option("--no-open", "Print the link instead of opening the browser")
+  .action(dashboard);
 
 const key = program.command("key").description("Back up or restore the encryption key");
 

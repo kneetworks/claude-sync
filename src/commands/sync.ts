@@ -7,9 +7,15 @@ import chalk from "chalk";
 import { encrypt, decryptBuffer, ENCRYPTION_OVERHEAD } from "../crypto/encrypt.js";
 import { getBackend, type Backend } from "../backends/index.js";
 import { loadConfig } from "../utils/config.js";
-import { loadManifest, saveManifest } from "../utils/manifest.js";
+import {
+  loadManifest,
+  saveManifest,
+  saveRemoteIndex,
+  type RemoteIndex,
+} from "../utils/manifest.js";
 import { acquireLock } from "../utils/lock.js";
 import { isLineMerged, mergeLines, resolve, sha256 } from "../utils/merge.js";
+import { isSelected } from "../utils/selection.js";
 import {
   belongsToSession,
   findLocalFiles,
@@ -25,6 +31,17 @@ interface SyncOptions {
   all?: boolean;
   /** Running from a Claude Code hook: quiet, and never fails the session */
   hook?: boolean;
+  /** Print nothing and leave reporting to the caller (the dashboard) */
+  silent?: boolean;
+}
+
+export interface SyncResult {
+  pulled: number;
+  pushed: number;
+  warnings: string[];
+  /** Another sync held the lock, so this one didn't run */
+  busy?: boolean;
+  error?: string;
 }
 
 interface HookInput {
@@ -106,15 +123,15 @@ async function saveConflict(remotePath: string, data: Buffer): Promise<string> {
   return file;
 }
 
-async function run(options: SyncOptions, push: boolean): Promise<void> {
+async function run(options: SyncOptions, push: boolean): Promise<SyncResult> {
   const config = await loadConfig();
+  const quiet = options.hook || options.silent;
 
   if (!config?.initialized) {
+    const error = "claude-sync not initialized. Run `claude-sync init` first.";
     // Not set up on this machine: stay out of the session's way
-    if (options.hook) return;
-    console.log(
-      chalk.red("Error: claude-sync not initialized. Run `claude-sync init` first.")
-    );
+    if (quiet) return { pulled: 0, pushed: 0, warnings: [], error };
+    console.log(chalk.red(`Error: ${error}`));
     process.exit(1);
   }
 
@@ -122,17 +139,18 @@ async function run(options: SyncOptions, push: boolean): Promise<void> {
   const release = await acquireLock();
 
   if (!release) {
-    if (!options.hook) console.log(chalk.yellow("Another sync is running; try again shortly."));
-    return;
+    if (!quiet) console.log(chalk.yellow("Another sync is running; try again shortly."));
+    return { pulled: 0, pushed: 0, warnings: [], busy: true };
   }
 
-  const spinner = options.hook ? null : ora("Fetching remote...").start();
+  const spinner = quiet ? null : ora("Fetching remote...").start();
   const progress = (text: string) => {
     if (spinner) spinner.text = text;
   };
   const warnings: string[] = [];
   let pulled = 0;
   let pushed = 0;
+  let error: string | undefined;
 
   try {
     const backend = await getBackend(config);
@@ -140,6 +158,12 @@ async function run(options: SyncOptions, push: boolean): Promise<void> {
     const manifest = await loadManifest();
     const remoteFiles = await backend.list();
     const remoteVersions = new Map(remoteFiles.map((f) => [f.path, f.version]));
+
+    const remoteIndex: RemoteIndex = {
+      listedAt: Date.now(),
+      files: Object.fromEntries(remoteFiles.map((f) => [f.path, { v: f.version, size: f.size }])),
+    };
+    await saveRemoteIndex(remoteIndex);
 
     // Claude Code may already have loaded, and be appending to, the current session
     const isLive = (remotePath: string) =>
@@ -154,6 +178,7 @@ async function run(options: SyncOptions, push: boolean): Promise<void> {
         continue;
       }
       if (isLive(file.path)) continue;
+      if (!isSelected(file.path, config.selection)) continue;
 
       const entry = manifest[file.path];
       const localPath = toLocalPath(file.path, homedir(), folders);
@@ -201,11 +226,13 @@ async function run(options: SyncOptions, push: boolean): Promise<void> {
     if (push) {
       const localFiles = await findLocalFiles(homedir(), folders);
       const pending = new Map<string, { h: string; size: number; mtime: number }>();
+      const encryptedSizes = new Map<string, number>();
       // One file the storage refuses would otherwise fail the whole push
       const maxSize = (backend.maxFileSize ?? Infinity) - ENCRYPTION_OVERHEAD;
 
       for (const [i, file] of localFiles.entries()) {
         progress(`Checking local ${i + 1}/${localFiles.length}...`);
+        if (!isSelected(file.remotePath, config.selection)) continue;
 
         const entry = manifest[file.remotePath];
         let stat: Stats;
@@ -255,8 +282,10 @@ async function run(options: SyncOptions, push: boolean): Promise<void> {
         }
 
         progress(`Encrypting ${pending.size + 1}: ${file.remotePath}`);
-        await backend.put(file.remotePath, await encrypt(data));
+        const encrypted = await encrypt(data);
+        await backend.put(file.remotePath, encrypted);
         pending.set(file.remotePath, local);
+        encryptedSizes.set(file.remotePath, encrypted.length);
       }
 
       if (pending.size > 0) {
@@ -265,9 +294,12 @@ async function run(options: SyncOptions, push: boolean): Promise<void> {
 
         for (const [remotePath, local] of pending) {
           const version = versions.get(remotePath);
-          if (version) manifest[remotePath] = { v: version, ...local };
+          if (!version) continue;
+          manifest[remotePath] = { v: version, ...local };
+          remoteIndex.files[remotePath] = { v: version, size: encryptedSizes.get(remotePath) };
         }
         pushed = pending.size;
+        await saveRemoteIndex(remoteIndex);
       }
 
       await saveManifest(manifest);
@@ -276,18 +308,22 @@ async function run(options: SyncOptions, push: boolean): Promise<void> {
     spinner?.succeed(
       push ? `Pulled ${pulled}, pushed ${pushed} file(s)` : `Pulled ${pulled} file(s)`
     );
-    for (const warning of warnings) console.error(chalk.yellow(`⚠ ${warning}`));
-  } catch (error) {
-    const message = errorMessage(error);
+    if (!options.silent) {
+      for (const warning of warnings) console.error(chalk.yellow(`⚠ ${warning}`));
+    }
+  } catch (caught) {
+    error = errorMessage(caught);
     if (options.hook) {
-      console.error(`claude-sync: ${message}`);
-    } else {
-      spinner?.fail(`Sync failed: ${message}`);
+      console.error(`claude-sync: ${error}`);
+    } else if (!options.silent) {
+      spinner?.fail(`Sync failed: ${error}`);
       process.exitCode = 1;
     }
   } finally {
     await release();
   }
+
+  return { pulled, pushed, warnings, error };
 }
 
 /**
@@ -300,4 +336,11 @@ export async function sync(options: SyncOptions): Promise<void> {
 
 export async function pull(options: SyncOptions): Promise<void> {
   await run(options, false);
+}
+
+/**
+ * Sync without printing anything, for the dashboard's "Sync now"
+ */
+export function syncSilently(): Promise<SyncResult> {
+  return run({ silent: true }, true);
 }

@@ -34,18 +34,19 @@ pnpm start status   # Test status command
 | Component | Purpose | Location |
 |-----------|---------|----------|
 | CLI | Command-line interface | `src/cli.ts` |
-| Commands | init, sync (push/pull), install, status, key, folder | `src/commands/` |
+| Commands | init, sync (push/pull), install, status, key, folder, dashboard | `src/commands/` |
 | Backends | Git, S3-compatible | `src/backends/` |
 | Crypto | AES-256-GCM encryption | `src/crypto/` |
-| Utils | Config, project path mapping, manifest, merge rules, lock | `src/utils/` |
+| Utils | Config, project path mapping, manifest, merge rules, lock, selective sync, dashboard data | `src/utils/` |
 
 ## Architecture
 
 ```
 ~/.claude-sync/
-├── config.json     # Backend config, folder mappings
+├── config.json     # Backend config, folder mappings, selection (what this machine skips)
 ├── key             # Encryption key (256-bit)
 ├── manifest.json   # Per remote path: last synced version, plaintext hash, local stat
+├── remote.json     # What the storage held at the last sync (for the dashboard)
 ├── conflicts/      # Remote copies set aside when both machines changed a file
 └── repo/           # Git backend local clone (a cache, reset to origin/main each sync)
     └── projects/   # Encrypted files: @home-<project>/<path inside project>.enc

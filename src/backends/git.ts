@@ -51,17 +51,21 @@ export async function initGitBackend(url: string): Promise<void> {
 }
 
 /**
- * Map each file under FILES_DIR at HEAD to its blob id
+ * Map each file under FILES_DIR at HEAD to its blob id and size
  */
-async function listTree(git: SimpleGit): Promise<Map<string, string>> {
-  const tree = await git.raw(["ls-tree", "-r", "-z", "HEAD", "--", FILES_DIR]);
-  const files = new Map<string, string>();
+async function listTree(git: SimpleGit): Promise<Map<string, { version: string; size: number }>> {
+  const tree = await git.raw(["ls-tree", "-r", "-l", "-z", "HEAD", "--", FILES_DIR]);
+  const files = new Map<string, { version: string; size: number }>();
 
   for (const entry of tree.split("\0")) {
-    // "<mode> <type> <object>\t<path>"
+    // "<mode> <type> <object> <size>\t<path>", the size padded with spaces
     const [meta, filePath] = entry.split("\t");
     if (!filePath?.endsWith(".enc")) continue;
-    files.set(filePath.slice(FILES_DIR.length + 1, -".enc".length), meta.split(" ")[2]);
+    const [, , version, size] = meta.split(/\s+/);
+    files.set(filePath.slice(FILES_DIR.length + 1, -".enc".length), {
+      version,
+      size: Number(size),
+    });
   }
 
   return files;
@@ -91,7 +95,7 @@ export function createGitBackend(): Backend {
       await git.raw(["clean", "-fdq"]);
 
       const files = await listTree(git);
-      return [...files].map(([p, version]) => ({ path: p, version }));
+      return [...files].map(([p, file]) => ({ path: p, ...file }));
     },
 
     async get(remotePath: string): Promise<Buffer> {
@@ -117,7 +121,7 @@ export function createGitBackend(): Backend {
 
       const files = await listTree(git);
       for (const remotePath of staged) {
-        const version = files.get(remotePath);
+        const version = files.get(remotePath)?.version;
         if (version) versions.set(remotePath, version);
       }
 

@@ -1,11 +1,14 @@
 import { createGitBackend } from "./git.js";
 import { createS3Backend, type S3Config } from "./s3.js";
+import type { Selection } from "../utils/selection.js";
 
 export interface RemoteFile {
   /** Portable path, e.g. "@home-Workspace-app/<session>.jsonl" */
   path: string;
   /** Changes whenever the stored ciphertext changes (git blob id, S3 ETag) */
   version: string;
+  /** Size of the stored ciphertext in bytes */
+  size?: number;
 }
 
 export interface Backend {
@@ -27,6 +30,8 @@ export interface Config {
   createdAt: string;
   /** Folder on the other machines ("~/Workspace") -> where this machine keeps it */
   folders?: Record<string, string>;
+  /** Projects and conversations this machine doesn't sync */
+  selection?: Selection;
 }
 
 export async function getBackend(config: Config): Promise<Backend> {

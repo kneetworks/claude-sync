@@ -62,6 +62,7 @@ export function createS3Backend(config: S3Config): Backend {
             files.push({
               path: obj.Key.slice(prefix.length, -".enc".length),
               version: obj.ETag,
+              size: obj.Size,
             });
           }
         }

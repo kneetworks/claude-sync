@@ -29,3 +29,11 @@ export async function acquireLock(): Promise<(() => Promise<void>) | null> {
 
   return null;
 }
+
+/**
+ * True while a sync (possibly started by a Claude Code hook) holds the lock
+ */
+export async function isSyncRunning(): Promise<boolean> {
+  const stat = await fs.stat(LOCK_FILE).catch(() => null);
+  return !!stat && Date.now() - stat.mtimeMs < STALE_MS;
+}

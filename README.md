@@ -90,6 +90,22 @@ Every sync pulls before it pushes, so a push never silently overwrites another m
 
 The session that is currently open is never overwritten by a hook; it is reconciled on the next sync after it closes. Deletions are not synced, so Claude Code's cleanup of old transcripts on one machine doesn't remove them anywhere else.
 
+### Choosing what syncs
+
+Long sessions can grow to tens of megabytes, and each change uploads the whole encrypted file again. To keep some of them off a machine, run:
+
+```bash
+claude-sync dashboard
+```
+
+This opens a page in your browser, much like the "choose folders" panel of a desktop sync app: every project and conversation on this machine or in your storage, with its size, last change and sync state, and a checkbox to sync it here or not.
+
+- Unchecked conversations aren't downloaded to this machine or uploaded from it. Your other machines keep syncing them, and the local copy stays where it is.
+- New conversations sync unless you uncheck their whole project. Checking a single conversation inside an unchecked project syncs just that one.
+- The choice is stored in this machine's `~/.claude-sync/config.json`, and takes effect at the next sync (or press **Sync now**).
+
+The page is served on `127.0.0.1` only and needs the one-time link printed in the terminal, so other websites and other users can't reach it. Press Ctrl+C to stop it.
+
 ## Commands
 
 | Command | Description |
@@ -100,6 +116,7 @@ The session that is currently open is never overwritten by a hook; it is reconci
 | `claude-sync pull` | Pull only (`--all` also restores files deleted locally) |
 | `claude-sync install` | Add hooks to Claude Code for automatic sync |
 | `claude-sync status` | Show configuration and sync status |
+| `claude-sync dashboard` | Choose which conversations sync on this machine, in your browser (`--port`, `--no-open`) |
 | `claude-sync folder add <other> <here>` | Keep projects from `<other>` on your other machines (e.g. `~/Workspace`) in `<here>` on this one |
 | `claude-sync folder remove <other>` | Undo `folder add` |
 | `claude-sync key export` | Print the encryption key as base64 |
@@ -265,7 +282,7 @@ With `--hook`, claude-sync reads the session ID Claude Code passes on stdin, pri
 4. Pull existing sessions: `claude-sync sync`
 5. Install hooks: `claude-sync install --global`
 
-Then open Claude Code in the project and run `/resume`.
+Then open Claude Code in the project and run `/resume`. Sync runs when a session starts and ends, so close a session on one machine before continuing it on another.
 
 ## Development
 
@@ -293,7 +310,7 @@ node dist/cli.js status
 - [x] S3/GCS/R2 backend support
 - [x] Parallel encryption and batch uploads
 - [x] Encryption validation (prevent plaintext leaks)
-- [ ] Selective sync (by project)
+- [x] Selective sync (by project or conversation)
 - [ ] Session search across machines
 - [ ] Team sharing (shared encryption keys)
 - [ ] Conflict resolution for concurrent edits
