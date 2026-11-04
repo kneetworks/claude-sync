@@ -5,7 +5,7 @@ import { homedir } from "os";
 import ora from "ora";
 import chalk from "chalk";
 import { encrypt, decryptBuffer, ENCRYPTION_OVERHEAD } from "../crypto/encrypt.js";
-import { getBackend, type Backend, type Config } from "../backends/index.js";
+import { getBackend, type Backend, type Config, type StorageSettings } from "../backends/index.js";
 import { loadConfig } from "../utils/config.js";
 import {
   loadManifest,
@@ -416,11 +416,28 @@ export interface CompactResult {
   error?: string;
 }
 
+const DAY = 86_400_000;
+/** How many days of old versions the storage can be set to keep */
+export const HISTORY_CHOICES = [1, 3, 7, 30];
+/** Days of old versions the storage keeps until someone chooses */
+export const DEFAULT_HISTORY_DAYS = 7;
+
+/**
+ * Days of old versions the storage keeps, the same for every machine; null keeps
+ * them all
+ */
+export function historyDays(settings: StorageSettings): number | null {
+  return settings.keepHistoryDays === undefined ? DEFAULT_HISTORY_DAYS : settings.keepHistoryDays;
+}
+
+const keepSince = (days: number | null) => (days === null ? 0 : Date.now() - days * DAY);
+
 /**
  * Drop the old versions the storage keeps (git only), there and in this machine's
- * copy. Running it on another machine afterwards frees the space there too.
+ * copy; other machines' copies drop them when they trim their history. With
+ * `keepHistory`, only versions older than the storage's history setting go.
  */
-export async function compactStorage(): Promise<CompactResult> {
+export async function compactStorage(keepHistory = false): Promise<CompactResult> {
   const none = { commits: 0, before: 0, after: 0 };
   const config = await loadConfig();
   if (!config?.initialized) return { ...none, error: "claude-sync not initialized" };
@@ -430,9 +447,49 @@ export async function compactStorage(): Promise<CompactResult> {
   try {
     const backend = await getBackend(config);
     if (!backend.compact) return { ...none, error: "This storage doesn't keep old versions" };
-    return await backend.compact();
+    if (!keepHistory) return await backend.compact();
+    await backend.list();
+    return await backend.compact(keepSince(historyDays((await backend.readSettings?.()) ?? {})));
   } catch (caught) {
     return { ...none, error: errorMessage(caught) };
+  } finally {
+    await release();
+  }
+}
+
+/**
+ * True when the storage, or this machine's copy of it, has versions older than the
+ * history it keeps. A day's grace has the icon trim about once a day, not hourly.
+ */
+export async function historyTrimDue(config: Config): Promise<boolean> {
+  const backend = await getBackend(config);
+  if (!backend.hasOldVersions || !backend.readSettings) return false;
+  const days = historyDays(await backend.readSettings());
+  return backend.hasOldVersions(keepSince(days === null ? null : days + 1));
+}
+
+/**
+ * The settings every machine shares, as of the last sync; null for storage that has
+ * none (buckets, which keep no history)
+ */
+export async function loadStorageSettings(config: Config): Promise<StorageSettings | null> {
+  const backend = await getBackend(config);
+  return backend.readSettings ? backend.readSettings() : null;
+}
+
+/**
+ * Change the settings every machine shares
+ */
+export async function updateStorageSettings(change: StorageSettings): Promise<void> {
+  const config = await loadConfig();
+  if (!config?.initialized) throw new Error("claude-sync not initialized");
+  const backend = await getBackend(config);
+  if (!backend.readSettings || !backend.writeSettings) throw new Error("This storage has no shared settings");
+  const release = await acquireLock();
+  if (!release) throw new Error("A sync is running; try again in a moment");
+  try {
+    await backend.list();
+    await backend.writeSettings({ ...(await backend.readSettings()), ...change });
   } finally {
     await release();
   }

@@ -25,10 +25,26 @@ export interface Backend {
   maxFileSize?: number;
   /**
    * Drop old versions, for storage that keeps them (git): the history becomes one
-   * commit of the current files. Returns how many commits it had, and the size of
+   * commit of the current files. With `keepSince` (ms), versions still current then
+   * and everything after are kept. Returns how many commits it had, and the size of
    * this machine's copy before and after.
    */
-  compact?(): Promise<{ commits: number; before: number; after: number }>;
+  compact?(keepSince?: number): Promise<{ commits: number; before: number; after: number }>;
+  /**
+   * True when compact(keepSince) has something to drop, in the storage or in this
+   * machine's copy of it. Looks only at this machine's copy.
+   */
+  hasOldVersions?(keepSince: number): Promise<boolean>;
+  /** Settings every machine shares, kept with the files (git), as of the last list() */
+  readSettings?(): Promise<StorageSettings>;
+  /** Replace the shared settings for every machine, on top of what list() fetched */
+  writeSettings?(settings: StorageSettings): Promise<void>;
+}
+
+/** Settings shared by every machine using the storage */
+export interface StorageSettings {
+  /** Days of old versions the storage keeps; null keeps them all */
+  keepHistoryDays?: number | null;
 }
 
 export interface Config {

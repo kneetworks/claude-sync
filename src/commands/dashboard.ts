@@ -16,7 +16,17 @@ import { isAutostartEnabled, setStartAtLogin } from "../tray/autostart.js";
 import { runningTray } from "../tray/instance.js";
 import { addFolderMapping, removeFolderMapping } from "./folder.js";
 import { hooksStatus, installHooks } from "./install.js";
-import { compactStorage, CONFLICTS_DIR, deleteConversations, syncSilently, type SyncResult } from "./sync.js";
+import {
+  compactStorage,
+  CONFLICTS_DIR,
+  deleteConversations,
+  HISTORY_CHOICES,
+  historyDays,
+  loadStorageSettings,
+  syncSilently,
+  updateStorageSettings,
+  type SyncResult,
+} from "./sync.js";
 import {
   connectStorage,
   provideKey,
@@ -137,6 +147,11 @@ export async function startDashboardServer(
         folders: Object.entries(current.folders ?? {}).map(([other, here]) => ({ other, here })),
         conflicts: conflicts.length,
         canCompact: current.backend === "git",
+        // Days of old versions the storage keeps, null for all of them
+        historyDays: await loadStorageSettings(current).then(
+          (settings) => (settings ? historyDays(settings) : undefined),
+          () => undefined
+        ),
       },
     };
   };
@@ -213,6 +228,15 @@ export async function startDashboardServer(
       return { result: await deleteConversations(conversationKeys(keys), storage) };
     }],
     ["/api/compact", async () => ({ result: await compactStorage() })],
+    ["/api/history", async ({ days }) => {
+      if (days !== null && !HISTORY_CHOICES.includes(days as number)) throw new HttpError(400, "Expected { days }");
+      await updateStorageSettings({ keepHistoryDays: days as number | null }).catch((error) => {
+        throw new HttpError(409, errorMessage(error));
+      });
+      // Now rather than at the icon's next check, which still does it if a sync is
+      // holding the storage meanwhile
+      void compactStorage(true);
+    }],
 
     // First-time setup, like `claude-sync init`
     ["/api/setup/connect", async ({ kind, ...fields }) => {

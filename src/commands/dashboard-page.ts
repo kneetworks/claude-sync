@@ -219,6 +219,11 @@ const PAGE = String.raw`<!doctype html>
   .setting-text p { margin: 2px 0 0; color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
   .setting-text a { color: var(--accent); }
   .setting-text .warn-text { color: var(--warn); }
+  .controls { display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
+  .controls select {
+    font: inherit; color: var(--text); background: var(--surface-2);
+    border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px;
+  }
   .secondary {
     background: var(--surface-2); color: var(--text); border: 1px solid var(--border);
     border-radius: 6px; padding: 6px 14px; cursor: pointer; white-space: nowrap;
@@ -734,10 +739,21 @@ const PAGE = String.raw`<!doctype html>
     $("settings-alert").className = "count" + (needsLook ? " warn" : "");
     $("settings-alert").title = needsLook ? "Something in Settings needs a look" : "";
 
+    const keep = el("select", {
+      "aria-label": "Keep old versions for",
+      onchange: (event) => {
+        const days = event.target.value === "all" ? null : Number(event.target.value);
+        act("/api/history", { days }, days === null
+          ? "Old versions will be kept, on all your computers"
+          : "Old versions will be kept for " + plural(days, "day") + ", on all your computers");
+      },
+    }, [[1, "1 day"], [3, "3 days"], [7, "7 days"], [30, "30 days"], ["all", "Forever"]].map(([value, label]) =>
+      el("option", { value: String(value), text: label })));
+    keep.value = s.historyDays === null ? "all" : String(s.historyDays);
     const history = s.canCompact
       ? setting("Storage history", [el("p", {
-          text: "Your git storage keeps every old version of every conversation. Compacting keeps only the current files, in your storage and on this computer. Run it on your other computers afterwards to free the space there too.",
-        })], button("Compact…", compact))
+          text: "Your git storage keeps old versions of your conversations, so one deleted or overwritten by mistake can still be recovered. Versions older than this are dropped, for all your computers. Compact drops them all now.",
+        })], el("div", { class: "controls" }, [keep, button("Compact…", compact)]))
       : null;
 
     $("settings").replaceChildren(...[

@@ -57,7 +57,7 @@ Delete one conversation from its row, or every conversation with no message for 
 - **Encryption key**: copied for your other machine, never shown on screen.
 - **Project folders**: [folder mappings](../README.md#restoring-into-the-right-project) between machines.
 - **Conflict copies**: copies set aside when two machines changed the same file.
-- **Storage history** (git): **Compact** keeps only the current version of each file, since a git repository otherwise keeps every version ever pushed.
+- **Storage history** (git): a git repository keeps every version ever pushed, which is a safety net for a conversation deleted or overwritten by mistake, but it grows with each sync. Choose how long old versions stay: 1, 3, 7 or 30 days, or forever, 7 by default. It's one setting for all your computers, and the icon drops older versions about once a day. **Compact** drops them all now.
 
 ## Get it
 

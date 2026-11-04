@@ -25,8 +25,11 @@ function machine(dir: string, name: string) {
   return {
     config: () => JSON.parse(fs.readFileSync(path.join(home, ".claude-sync", "config.json"), "utf-8")),
     transcript: path.join(home, ".claude", "projects", encode(path.join(home, "code", "app")), `${SESSION}.jsonl`),
-    run(args: string[], input?: string): string {
-      return check(spawnSync(process.execPath, [CLI, ...args], { env, input, encoding: "utf-8" }), args.join(" "));
+    run(args: string[], input?: string, extra?: NodeJS.ProcessEnv): string {
+      return check(
+        spawnSync(process.execPath, [CLI, ...args], { env: { ...env, ...extra }, input, encoding: "utf-8" }),
+        args.join(" ")
+      );
     },
     // Calls a function the dashboard uses, which has no command of its own
     call(fn: string, ...args: unknown[]): unknown {
@@ -185,6 +188,53 @@ describe.skipIf(!fs.existsSync(CLI))("two machines", () => {
 
     a.call("syncSilently", [KEY]);
     expect(contents(a.transcript)).toEqual(["message 1", "message 2"]);
+  });
+
+  it("keep a week of storage history, the same for every machine", { timeout: 120_000 }, () => {
+    const dir = path.join(work, "history");
+    const storage = path.join(dir, "storage.git");
+    spawnSync("git", ["init", "-q", "--bare", "-b", "main", storage]);
+    const a = machine(dir, "a");
+    const b = machine(dir, "b");
+    a.run(["init", "--git", storage]);
+    b.run(["init", "--git", storage, "--key", a.run(["key", "export"]).match(/[A-Za-z0-9+/]{43}=/)![0]]);
+    const git = (...args: string[]) => spawnSync("git", ["-C", storage, ...args], { encoding: "utf-8" }).stdout.trim();
+    const commits = () => Number(git("rev-list", "--count", "main"));
+    const version = (commit: string) => git("rev-parse", `${commit}:projects/${KEY}.jsonl.enc`);
+
+    // Synced 10, 9 and 1 days ago, then now
+    fs.mkdirSync(path.dirname(a.transcript), { recursive: true });
+    for (const [i, daysAgo] of [10, 9, 1, 0].entries()) {
+      fs.appendFileSync(a.transcript, `${message(i + 1)}\n`);
+      const date = new Date(Date.now() - daysAgo * 86_400_000).toISOString();
+      a.run(["sync"], undefined, { GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date });
+    }
+    const files = git("ls-tree", "-r", "main");
+    const [tenDaysAgo, nineDaysAgo] = [version("main~3"), version("main~2")];
+
+    // A week by default: the version still current a week ago stays, the older one goes
+    expect(a.call("historyTrimDue", a.config())).toBe(true);
+    a.call("compactStorage", true);
+    expect(commits()).toBe(3);
+    expect(git("ls-tree", "-r", "main")).toBe(files);
+    const kept = git("rev-list", "--objects", "main");
+    expect(kept).toContain(nineDaysAgo);
+    expect(kept).not.toContain(tenDaysAgo);
+    expect(a.call("historyTrimDue", a.config())).toBe(false);
+
+    // The other machine syncs as before, then drops the old versions from its own copy
+    b.run(["sync"]);
+    expect(contents(b.transcript)).toEqual(["message 1", "message 2", "message 3", "message 4"]);
+    expect(b.call("historyTrimDue", b.config())).toBe(true);
+    b.call("compactStorage", true);
+    expect(commits()).toBe(3);
+    expect(b.call("historyTrimDue", b.config())).toBe(false);
+
+    // One setting for every machine, kept beside the conversations
+    a.call("updateStorageSettings", { keepHistoryDays: null });
+    b.run(["sync"]);
+    expect(b.call("loadStorageSettings", b.config())).toEqual({ keepHistoryDays: null });
+    expect(git("ls-tree", "-r", "main", "--", "projects")).toBe(files);
   });
 
   it("notice a conversation that changed but hasn't synced, for syncing when idle", { timeout: 120_000 }, () => {

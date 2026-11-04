@@ -55,7 +55,8 @@ pnpm start status   # Test status command
 ├── tray/           # The tray helper script for this OS, and tray.log
 ├── conflicts/      # Remote copies set aside when both machines changed a file
 └── repo/           # Git backend local clone (a cache, reset to origin/main each sync)
-    └── projects/   # Encrypted files: @home-<project>/<path inside project>.enc
+    ├── projects/   # Encrypted files: @home-<project>/<path inside project>.enc
+    └── settings.json  # Shared by every machine: how many days of old versions the history keeps
 ```
 
 ## Critical Patterns

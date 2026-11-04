@@ -17,7 +17,7 @@ import { clearTrayInfo, runningTray, saveTrayInfo } from "../tray/instance.js";
 import { idleSyncDue, RETRY_MS, type IdleSync } from "../tray/idle.js";
 import { trayStatus } from "../tray/status.js";
 import { startDashboardServer } from "./dashboard.js";
-import { lastUnsyncedChange } from "./sync.js";
+import { compactStorage, historyTrimDue, lastUnsyncedChange } from "./sync.js";
 
 const TRAY_DIR = path.join(homedir(), ".claude-sync", "tray");
 const LOG_FILE = path.join(TRAY_DIR, "tray.log");
@@ -26,6 +26,8 @@ const CLI = fileURLToPath(new URL("../cli.js", import.meta.url));
 const POLL_MS = 2000;
 // How often to look for conversations that went quiet without their session ending
 const IDLE_CHECK_MS = 60_000;
+// How often to look for versions older than the storage history keeps
+const HISTORY_CHECK_MS = 60 * 60_000;
 
 interface TrayOptions {
   /** Run in this process instead of starting a background one */
@@ -147,12 +149,14 @@ async function runTray(config: Config | null): Promise<void> {
 
   let timer: NodeJS.Timeout | undefined;
   let idleTimer: NodeJS.Timeout | undefined;
+  let historyTimer: NodeJS.Timeout | undefined;
   let quitting = false;
   const quit = async (code = 0) => {
     if (quitting) return;
     quitting = true;
     clearInterval(timer);
     clearInterval(idleTimer);
+    clearInterval(historyTimer);
     child.stdin.end();
     await clearTrayInfo(process.pid);
     process.exit(code);
@@ -206,10 +210,23 @@ async function runTray(config: Config | null): Promise<void> {
     else idle.handled = lastChange;
   };
 
+  // Git storage keeps every version ever synced; old ones go once they're older than
+  // the history every machine agreed to keep, and the space they took here with them
+  const trimHistory = async () => {
+    const config = await loadConfig();
+    if (!config?.initialized || server.isSyncing() || !(await historyTrimDue(config))) return;
+    const result = await compactStorage(true);
+    if (result.error) await log(`Trimming the storage history: ${result.error}`);
+  };
+
   timer = setInterval(() => void update(), POLL_MS);
   idleTimer = setInterval(
     () => void syncWhenIdle().catch((error) => log(`Sync when idle: ${(error as Error).message}`)),
     IDLE_CHECK_MS
+  );
+  historyTimer = setInterval(
+    () => void trimHistory().catch((error) => log(`Trimming the storage history: ${(error as Error).message}`)),
+    HISTORY_CHECK_MS
   );
   void update();
 
