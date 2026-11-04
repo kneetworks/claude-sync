@@ -1,9 +1,14 @@
+import fs from "fs/promises";
 import inquirer from "inquirer";
 import ora from "ora";
 import chalk from "chalk";
-import { generateKey, saveKey } from "../crypto/keys.js";
+import { generateKey, importKey, keyExists, saveKey } from "../crypto/keys.js";
 import { initGitBackend } from "../backends/git.js";
+import { checkKey, S3_ENDPOINTS, sampleOf } from "../utils/storage-setup.js";
+import { getBackend, type Backend, type RemoteFile } from "../backends/index.js";
 import { saveConfig } from "../utils/config.js";
+import { expandHome } from "../utils/sessions.js";
+import { folderAdd } from "./folder.js";
 
 interface InitOptions {
   git?: string;
@@ -12,13 +17,69 @@ interface InitOptions {
   r2?: string;
   region?: string;
   endpoint?: string;
+  key?: string;
 }
 
-// Common S3-compatible endpoints
-const S3_ENDPOINTS = {
-  gcs: "https://storage.googleapis.com",
-  r2: "https://{account_id}.r2.cloudflarestorage.com", // User needs to replace {account_id}
-};
+/**
+ * Ask for the key the storage's sessions were encrypted with. It's checked against
+ * the smallest of them, so a wrong key is caught now rather than at the first sync.
+ */
+async function promptForKey(remote: Backend, files: RemoteFile[]): Promise<void> {
+  console.log(chalk.yellow("\nThis storage already has synced sessions, so this machine needs their key."));
+  console.log(
+    chalk.dim("Get it on a machine that's set up with ") +
+      chalk.cyan("claude-sync key export") +
+      chalk.dim(", or from wherever you keep it.\n")
+  );
+
+  const sample = await sampleOf(remote, files);
+  const { key } = await inquirer.prompt([
+    {
+      type: "password",
+      name: "key",
+      mask: "*",
+      message: "Encryption key (base64):",
+      validate: (input: string) => checkKey(input, sample),
+    },
+  ]);
+
+  await importKey(key.trim());
+  console.log(chalk.green("✔ Encryption key imported"));
+}
+
+/**
+ * A machine joining existing storage may keep its projects somewhere else than the
+ * others, which has to be known before its first sync
+ */
+async function askAboutFolders(): Promise<void> {
+  const { same } = await inquirer.prompt([
+    {
+      type: "confirm",
+      name: "same",
+      default: true,
+      message: "Are your projects in the same folder (relative to your home folder) as on your other machines?",
+    },
+  ]);
+  if (same) return;
+
+  const isFolder = (input: string) =>
+    fs.stat(expandHome(input.trim())).then((stat) => stat.isDirectory(), () => false);
+  const { other, here } = await inquirer.prompt([
+    {
+      type: "input",
+      name: "other",
+      message: "Projects folder on your other machines (e.g. ~/Workspace):",
+      validate: (input: string) => input.trim().length > 0 || "Enter a folder",
+    },
+    {
+      type: "input",
+      name: "here",
+      message: `The same folder on this machine (e.g. ${process.platform === "win32" ? "D:\\Projects" : "~/Projects"}):`,
+      validate: async (input: string) => (await isFolder(input)) || "That isn't a folder on this machine",
+    },
+  ]);
+  await folderAdd(other.trim(), expandHome(here.trim()));
+}
 
 export async function init(options: InitOptions): Promise<void> {
   console.log(chalk.bold("\n🔄 Claude Sync Setup\n"));
@@ -118,7 +179,9 @@ export async function init(options: InitOptions): Promise<void> {
           region: "auto",
         };
         console.log(
-          chalk.dim("\nNote: Set GOOGLE_APPLICATION_CREDENTIALS or use gcloud auth\n")
+          chalk.dim(
+            "\nNote: Create an HMAC key (Cloud Storage > Settings > Interoperability) and set it as\nAWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY\n"
+          )
         );
       } else if (choice === "r2") {
         // Cloudflare R2
@@ -172,18 +235,6 @@ export async function init(options: InitOptions): Promise<void> {
     }
   }
 
-  // Generate encryption key
-  const spinner = ora("Generating encryption key...").start();
-
-  try {
-    const key = await generateKey();
-    await saveKey(key);
-    spinner.succeed("Encryption key generated and saved");
-  } catch (error) {
-    spinner.fail("Failed to generate encryption key");
-    throw error;
-  }
-
   // Initialize backend
   const backendSpinner = ora(`Setting up ${backend} backend...`).start();
 
@@ -199,6 +250,46 @@ export async function init(options: InitOptions): Promise<void> {
     throw error;
   }
 
+  // Set up the encryption key. Never replace an existing one: everything already
+  // pushed with it would become unreadable.
+  const spinner = ora("Setting up encryption key...").start();
+  let joined = false;
+
+  try {
+    if (options.key) {
+      await importKey(options.key.trim());
+      spinner.succeed("Encryption key imported");
+    } else if (await keyExists()) {
+      spinner.succeed("Using existing encryption key");
+    } else {
+      // A fresh key can't read what another machine already pushed
+      const remote = await getBackend({ backend, backendConfig, initialized: true, createdAt: "" });
+      const files = await remote.list();
+      if (files.length > 0 && process.stdin.isTTY) {
+        spinner.stop();
+        await promptForKey(remote, files);
+        joined = true;
+      } else if (files.length > 0) {
+        spinner.fail("This storage already has synced sessions");
+        console.log(
+          chalk.dim("Run init again with ") +
+            chalk.cyan("--key <base64>") +
+            chalk.dim(", using the key from your other machine (") +
+            chalk.cyan("claude-sync key export") +
+            chalk.dim(")\n")
+        );
+        process.exit(1);
+      } else {
+        const key = await generateKey();
+        await saveKey(key);
+        spinner.succeed("Encryption key generated and saved");
+      }
+    }
+  } catch (error) {
+    spinner.fail("Failed to set up encryption key");
+    throw error;
+  }
+
   // Save configuration
   await saveConfig({
     backend,
@@ -207,15 +298,21 @@ export async function init(options: InitOptions): Promise<void> {
     createdAt: new Date().toISOString(),
   });
 
+  if (joined) await askAboutFolders();
+
   console.log(chalk.green("\n✅ Claude Sync initialized successfully!\n"));
   console.log("Next steps:");
   console.log(
     chalk.dim("  1. Run ") +
-      chalk.cyan("claude-sync install") +
-      chalk.dim(" to add hooks to Claude Code")
+      chalk.cyan("claude-sync sync") +
+      chalk.dim(" for the first sync (it can take a while)")
   );
   console.log(
-    chalk.dim("  2. Your sessions will now sync automatically\n")
+    chalk.dim("  2. Run ") +
+      chalk.cyan("claude-sync install") +
+      chalk.dim(" to add hooks to Claude Code (") +
+      chalk.cyan("--tray") +
+      chalk.dim(" for the notification area icon too)\n")
   );
 
   // Security reminder
@@ -226,6 +323,8 @@ export async function init(options: InitOptions): Promise<void> {
     )
   );
   console.log(
-    chalk.dim("   Back it up safely - without it, you cannot decrypt your sessions\n")
+    chalk.dim("   Back it up with ") +
+      chalk.cyan("claude-sync key export") +
+      chalk.dim(" - without it, you cannot decrypt your sessions\n")
   );
 }

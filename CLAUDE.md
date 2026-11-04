@@ -34,19 +34,29 @@ pnpm start status   # Test status command
 | Component | Purpose | Location |
 |-----------|---------|----------|
 | CLI | Command-line interface | `src/cli.ts` |
-| Commands | init, push, pull, install, status | `src/commands/` |
-| Backends | Git, S3 (future) | `src/backends/` |
+| Commands | init, sync (push/pull), install, status, key, folder, dashboard, tray | `src/commands/` |
+| Tray | Notification area icon scripts per OS (PowerShell, osascript, python3), start at login; icon PNGs generated from `assets/tray-icon.svg` by `scripts/render-tray-icons.ps1` | `src/tray/` |
+| Installers | Double-click setup per OS; all run the same build, install and setup steps | `install-*`, `scripts/setup.mjs` |
+| Docs | Images for the README: screenshots of the dashboard and icon (taken from a made-up demo setup, never real data) and the How It Works illustration | `docs/images/` |
+| Backends | Git, S3-compatible | `src/backends/` |
 | Crypto | AES-256-GCM encryption | `src/crypto/` |
-| Utils | Config, session management | `src/utils/` |
+| Utils | Config, project path mapping, manifest, merge rules, lock, selective sync, dashboard data, storage setup shared by init and the dashboard | `src/utils/` |
 
 ## Architecture
 
 ```
 ~/.claude-sync/
-├── config.json     # Backend config
+├── config.json     # Backend config, folder mappings, selection (what this machine skips)
 ├── key             # Encryption key (256-bit)
-└── repo/           # Git backend local clone
-    └── sessions/   # Encrypted session files
+├── manifest.json   # Per remote path: last synced version, plaintext hash, local stat
+├── remote.json     # What the storage held at the last sync (for the dashboard)
+├── last-sync.json  # Outcome of the latest sync, whoever ran it (for the dashboard and tray)
+├── tray.json       # Running tray icon: pid and dashboard link
+├── tray/           # The tray helper script for this OS, and tray.log
+├── conflicts/      # Remote copies set aside when both machines changed a file
+└── repo/           # Git backend local clone (a cache, reset to origin/main each sync)
+    ├── projects/   # Encrypted files: @home-<project>/<path inside project>.enc
+    └── settings.json  # Shared by every machine: how many days of old versions the history keeps
 ```
 
 ## Critical Patterns

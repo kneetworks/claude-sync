@@ -1,7 +1,13 @@
+import fs from "fs/promises";
 import chalk from "chalk";
 import { loadConfig } from "../utils/config.js";
-import { findSessions } from "../utils/sessions.js";
+import { loadManifest } from "../utils/manifest.js";
+import { homedir } from "os";
+import { findLocalFiles, toFolderMappings } from "../utils/sessions.js";
 import { keyExists } from "../crypto/keys.js";
+import { isAutostartEnabled } from "../tray/autostart.js";
+import { runningTray } from "../tray/instance.js";
+import { TRAY_AREA } from "./tray.js";
 
 export async function status(): Promise<void> {
   console.log(chalk.bold("\n🔄 Claude Sync Status\n"));
@@ -41,17 +47,45 @@ export async function status(): Promise<void> {
   }
   console.log();
 
-  // Session counts
-  console.log(chalk.bold("Sessions:"));
-  try {
-    const allSessions = await findSessions();
-    const pendingSessions = await findSessions({ modifiedSinceLastSync: true });
+  const folders = Object.entries(config.folders ?? {});
+  if (folders.length > 0) {
+    console.log(chalk.bold("Folders:"));
+    for (const [other, here] of folders) {
+      console.log(`  ${other} on other machines → ${here}`);
+    }
+    console.log();
+  }
 
-    console.log(`  Local sessions: ${allSessions.length}`);
-    console.log(`  Pending sync: ${pendingSessions.length}`);
+  // Local files
+  console.log(chalk.bold("Local files:"));
+  try {
+    const files = await findLocalFiles(homedir(), toFolderMappings(config.folders));
+    const manifest = await loadManifest();
+
+    let changed = 0;
+    for (const file of files) {
+      const entry = manifest[file.remotePath];
+      const stat = await fs.stat(file.absPath);
+      if (!entry || entry.size !== stat.size || entry.mtime !== stat.mtimeMs) changed++;
+    }
+
+    // Top-level transcripts only; subagent transcripts live in per-session folders
+    const sessions = files.filter((f) => /^[^/]+\/[^/]+\.jsonl$/.test(f.remotePath));
+    const projects = new Set(files.map((f) => f.remotePath.split("/")[0]));
+
+    console.log(`  Projects: ${projects.size}`);
+    console.log(`  Sessions: ${sessions.length}`);
+    console.log(`  Files: ${files.length}`);
+    console.log(`  Changed since last sync: ${changed}`);
   } catch {
     console.log(chalk.dim("  Unable to read sessions"));
   }
+  console.log();
+
+  console.log(chalk.bold("Icon:"));
+  if (await runningTray()) console.log(chalk.green(`  ✓ Running in the ${TRAY_AREA}`));
+  else console.log(chalk.dim("  Not running (`claude-sync tray` starts it)"));
+  console.log(`  Starts at login: ${(await isAutostartEnabled()) ? "yes" : "no"}`);
   console.log();
 
   // Created date

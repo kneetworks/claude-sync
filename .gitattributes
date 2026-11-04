@@ -1,0 +1,4 @@
+# The installers must keep their platform's line endings wherever they're checked out
+*.cmd text eol=crlf
+*.command text eol=lf
+*.sh text eol=lf
