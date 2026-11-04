@@ -1,7 +1,7 @@
 import { randomBytes } from "crypto";
 import { describe, it, expect } from "vitest";
 import { encryptWithKey } from "../../crypto/encrypt.js";
-import { checkKey } from "../init.js";
+import { checkKey } from "../../utils/storage-setup.js";
 
 describe("checkKey", () => {
   const key = randomBytes(32);

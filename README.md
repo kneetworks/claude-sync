@@ -45,7 +45,7 @@ claude-sync install --global
 
 ## Dashboard and notification area icon
 
-Rather not use the terminal? claude-sync can work like a desktop sync app: an icon in the notification area (the menu bar on macOS) shows when it's syncing, and a dashboard lets you choose which conversations sync on each machine, clean up old ones and change settings. It runs on **Windows, macOS and Linux**, with nothing to install beyond claude-sync.
+Rather not use the terminal? claude-sync can work like a desktop sync app: an icon in the notification area (the menu bar on macOS) shows when it's syncing, and a dashboard lets you connect your storage, choose which conversations sync on each machine, clean up old ones and change settings. It runs on **Windows, macOS and Linux**, with nothing to install beyond claude-sync.
 
 [![The claude-sync dashboard](docs/images/dashboard.png)](docs/dashboard.md)
 
@@ -142,7 +142,8 @@ claude-sync init --s3 my-bucket --region us-west-2
 ```bash
 claude-sync init --gcs my-gcs-bucket
 
-# Uses GOOGLE_APPLICATION_CREDENTIALS or gcloud auth
+# Uses Cloud Storage's S3-compatible API: set an HMAC key (Settings > Interoperability)
+# as AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY
 ```
 
 ### Cloudflare R2

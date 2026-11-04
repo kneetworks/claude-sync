@@ -37,16 +37,22 @@ program
   .option("--hook", "Run from a Claude Code hook (quiet, never fails the session)")
   .action(sync);
 
+// Earlier versions' options stay accepted, so their hooks and scripts keep working:
+// every changed file is synced either way
 program
   .command("push")
   .description("Same as sync: remote changes are always pulled first")
-  .action(sync);
+  .option("--session <id>", "Accepted for compatibility: everything changed is synced")
+  .option("--file <path>", "Accepted for compatibility: everything changed is synced")
+  .option("--all", "Accepted for compatibility: everything changed is synced")
+  .action(() => sync({}));
 
 program
   .command("pull")
   .description("Pull remote changes without pushing")
   .option("--all", "Also restore files deleted locally after they were synced")
-  .action(pull);
+  .option("--session <id>", "Accepted for compatibility: everything changed is pulled")
+  .action(({ all }) => pull({ all }));
 
 program
   .command("install")

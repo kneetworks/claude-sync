@@ -139,15 +139,12 @@ export async function install(options: InstallOptions): Promise<void> {
     console.log(chalk.dim(`No desktop session here, so no ${TRAY_AREA} icon.\n`));
     return;
   }
-  if (!(await loadConfig())?.initialized) {
-    console.log(chalk.dim(`After \`claude-sync init\`, run \`claude-sync install\` again to add the ${TRAY_AREA} icon.\n`));
-    return;
-  }
-
   try {
     await setUpTray();
     console.log(chalk.green(`✅ claude-sync is in the ${TRAY_AREA} and starts when you log in.`));
-    console.log(chalk.dim("   Click its icon to see what's syncing and choose what syncs on this computer.\n"));
+    console.log(chalk.dim((await loadConfig())?.initialized
+      ? "   Click its icon to see what's syncing and choose what syncs on this computer.\n"
+      : "   Click its icon to connect your storage.\n"));
   } catch (error) {
     console.log(chalk.yellow(`⚠ Couldn't add the ${TRAY_AREA} icon: ${(error as Error).message}`));
     console.log(chalk.dim("  Sync still runs from the hooks. Try again with `claude-sync tray --startup`.\n"));

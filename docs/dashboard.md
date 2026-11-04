@@ -1,10 +1,21 @@
 # Dashboard and notification area icon
 
-claude-sync can work like a desktop sync app. An icon in the notification area (the menu bar on macOS) shows when a sync runs, and a dashboard lets you choose which conversations sync on each machine, clean up old ones and change settings without the terminal.
+claude-sync can work like a desktop sync app. An icon in the notification area (the menu bar on macOS) shows when a sync runs, and a dashboard lets you connect your storage, choose which conversations sync on each machine, clean up old ones and change settings without the terminal.
 
 It runs on **Windows, macOS and Linux**, and needs nothing beyond claude-sync: PowerShell draws the icon on Windows, `osascript` on macOS, and `python3` on Linux. It's optional: the hooks keep syncing whether the icon runs or not.
 
 ![The dashboard](images/dashboard.png)
+
+## Connect your storage
+
+![Connect your storage](images/setup.png)
+
+The first time, the dashboard sets claude-sync up, like `claude-sync init` does in the terminal:
+
+- **Storage**: a private git repository or a bucket, with short steps for creating one.
+- **Encryption key**: made for you on your first machine, to keep somewhere safe. Your other machines ask for it; **Copy key** in Settings copies it.
+- **Project folders**: where your projects are, if your machines keep them in different places.
+- **Finish**: turns on syncing with Claude Code, and the icon if you want it, then syncs.
 
 ## The icon
 
@@ -47,14 +58,14 @@ Delete one conversation from its row, or every conversation with no message for 
 
 ## Get it
 
-With claude-sync [installed and set up](../README.md#quick-start):
+With claude-sync [installed](../README.md#quick-start), set up or not:
 
 ```bash
 claude-sync install --tray   # hooks, plus the icon, started at every login
 claude-sync dashboard        # or only the dashboard, in your browser
 ```
 
-Or, from a copy of this repository, double-click the installer for your system. It builds and installs claude-sync, asks for your storage (and your key, on another machine), syncs, and sets up the hooks and the icon:
+Or, from a copy of this repository, double-click the installer for your system. It builds and installs claude-sync, sets up the hooks and the icon, and opens the dashboard to connect your storage (on a machine without a desktop, it asks in the terminal instead):
 
 | Windows | macOS | Linux |
 |---------|-------|-------|

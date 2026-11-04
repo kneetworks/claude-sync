@@ -40,7 +40,7 @@ pnpm start status   # Test status command
 | Docs | The dashboard and icon's feature page, linked from the README, and its screenshots (taken from a made-up demo setup, never real data) | `docs/` |
 | Backends | Git, S3-compatible | `src/backends/` |
 | Crypto | AES-256-GCM encryption | `src/crypto/` |
-| Utils | Config, project path mapping, manifest, merge rules, lock, selective sync, dashboard data | `src/utils/` |
+| Utils | Config, project path mapping, manifest, merge rules, lock, selective sync, dashboard data, storage setup shared by init and the dashboard | `src/utils/` |
 
 ## Architecture
 

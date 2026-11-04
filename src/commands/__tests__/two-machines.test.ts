@@ -29,8 +29,11 @@ function machine(dir: string, name: string) {
     },
     // Calls a function the dashboard uses, which has no command of its own
     call(fn: string, ...args: unknown[]): unknown {
-      const module = pathToFileURL(path.join(DIST, "commands", "sync.js")).href;
-      const code = `const m = await import(${JSON.stringify(module)}); console.log(JSON.stringify(await m.${fn}(...${JSON.stringify(args)})));`;
+      return this.callIn("commands/sync.js", fn, ...args);
+    },
+    callIn(file: string, fn: string, ...args: unknown[]): any {
+      const module = pathToFileURL(path.join(DIST, file)).href;
+      const code = `const m = await import(${JSON.stringify(module)}); console.log(JSON.stringify(await m.${fn}(...${JSON.stringify(args)}) ?? null));`;
       return JSON.parse(check(spawnSync(process.execPath, ["--input-type=module", "-e", code], { env, encoding: "utf-8" }), fn));
     },
   };
@@ -84,6 +87,38 @@ describe.skipIf(!fs.existsSync(CLI))("two machines", () => {
     // Sync now on B brings A's copy, which the hook must not have overwritten
     b.run(["sync"]);
     expect(contents(b.transcript)).toEqual(["message 1", "message 2", "message 3", "message 4"]);
+  });
+
+  it("set up from the dashboard: a new key for empty storage, the existing key otherwise", { timeout: 120_000 }, () => {
+    const { a } = setUp("dashboard-setup");
+    const dir = path.join(work, "dashboard-setup");
+    const storage = path.join(dir, "storage.git");
+    const SETUP = "utils/storage-setup.js";
+
+    // A storage that already has conversations asks for their key, and checks it
+    const c = machine(dir, "c");
+    const connection = c.callIn(SETUP, "connectStorage", "git", { url: storage });
+    expect(connection.step).toBe("key");
+    expect(() => c.callIn(SETUP, "provideKey", connection.pending, Buffer.alloc(32, 1).toString("base64"))).toThrow(/can't read/);
+    const key = a.run(["key", "export"]).match(/[A-Za-z0-9+/]{43}=/)![0];
+    c.callIn(SETUP, "provideKey", connection.pending, key);
+    c.run(["sync"]);
+    expect(contents(c.transcript)).toEqual(["message 1", "message 2"]);
+
+    // An empty storage gets a new key
+    const empty = path.join(dir, "empty.git");
+    spawnSync("git", ["init", "-q", "--bare", "-b", "main", empty]);
+    const d = machine(dir, "d");
+    expect(d.callIn(SETUP, "connectStorage", "git", { url: empty })).toEqual({ step: "new" });
+    expect(d.run(["key", "export"])).toMatch(/[A-Za-z0-9+/]{43}=/);
+  });
+
+  it("still accept the push and pull options earlier versions' hooks use", { timeout: 120_000 }, () => {
+    const { a, b } = setUp("compat");
+    fs.appendFileSync(a.transcript, `${message(3)}\n`);
+    a.run(["push", "--session", SESSION, "--file", a.transcript, "--all"]);
+    b.run(["pull", "--session", SESSION]);
+    expect(contents(b.transcript)).toEqual(["message 1", "message 2", "message 3"]);
   });
 
   it("delete a conversation here and from storage, while the other keeps its copy", { timeout: 120_000 }, () => {

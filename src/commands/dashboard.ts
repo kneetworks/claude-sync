@@ -17,6 +17,14 @@ import { runningTray } from "../tray/instance.js";
 import { addFolderMapping, removeFolderMapping } from "./folder.js";
 import { hooksStatus, installHooks } from "./install.js";
 import { compactStorage, CONFLICTS_DIR, deleteConversations, syncSilently, type SyncResult } from "./sync.js";
+import {
+  connectStorage,
+  provideKey,
+  STORAGE_KINDS,
+  type PendingStorage,
+  type StorageKind,
+} from "../utils/storage-setup.js";
+import { hostname } from "os";
 import { isSafeRemotePath } from "../utils/sessions.js";
 import { dashboardPage } from "./dashboard-page.js";
 
@@ -77,10 +85,21 @@ async function readJson(req: http.IncomingMessage): Promise<Record<string, unkno
  * Serve the dashboard on this machine only. Used by `claude-sync dashboard` and by
  * the tray icon, which keeps it running in the background.
  */
-export async function startDashboardServer(config: Config, port = 0): Promise<DashboardServer> {
-  const maxFileSize = await getBackend(config)
-    .then((backend) => backend.maxFileSize)
-    .catch(() => undefined);
+export async function startDashboardServer(
+  config: Config | null,
+  port = 0,
+  options: { hostedByTray?: boolean } = {}
+): Promise<DashboardServer> {
+  // The storage's file size limit, once it's set up
+  let maxFileSize: number | undefined;
+  let limitKnown = false;
+  const fileSizeLimit = async (current: Config) => {
+    if (!limitKnown) {
+      maxFileSize = await getBackend(current).then((backend) => backend.maxFileSize, () => undefined);
+      limitKnown = true;
+    }
+    return maxFileSize;
+  };
 
   // Only someone with the link can use the API: another site open in the browser
   // can't send the header, and the Host check stops DNS rebinding
@@ -95,12 +114,18 @@ export async function startDashboardServer(config: Config, port = 0): Promise<Da
   let syncing: Promise<SyncResult> | null = null;
   const sync = () => (syncing ??= syncSilently().finally(() => (syncing = null)));
 
+  // A storage that has conversations, waiting for their key during setup
+  let pending: PendingStorage | null = null;
+
   const state = async () => {
     // Re-read each time: `claude-sync folder add` may have changed the config meanwhile
     const current = (await loadConfig()) ?? config;
+    if (!current?.initialized) {
+      return { machine: hostname(), hostedByTray: !!options.hostedByTray, setup: { needsKey: !!pending } };
+    }
     const conflicts = await glob("**/*", { cwd: CONFLICTS_DIR, nodir: true }).catch(() => []);
     return {
-      ...(await loadDashboardState(current, maxFileSize)),
+      ...(await loadDashboardState(current, await fileSizeLimit(current))),
       syncing: !!syncing || (await isSyncRunning()),
       lastSync: await loadLastSync(),
       settings: {
@@ -181,6 +206,39 @@ export async function startDashboardServer(config: Config, port = 0): Promise<Da
       return { result: await deleteConversations(conversationKeys(keys), storage) };
     }],
     ["/api/compact", async () => ({ result: await compactStorage() })],
+
+    // First-time setup, like `claude-sync init`
+    ["/api/setup/connect", async ({ kind, ...fields }) => {
+      if ((await loadConfig())?.initialized) throw new HttpError(409, "claude-sync is already set up");
+      if (!STORAGE_KINDS.includes(kind as StorageKind)) throw new HttpError(400, "Choose a kind of storage");
+      const strings = Object.fromEntries(
+        Object.entries(fields).filter((entry): entry is [string, string] => typeof entry[1] === "string")
+      );
+      const connection = await connectStorage(kind as StorageKind, strings).catch((error) => {
+        throw new HttpError(400, errorMessage(error));
+      });
+      pending = connection.step === "key" ? connection.pending : null;
+      return { connected: connection.step };
+    }],
+    ["/api/setup/key", async ({ key }) => {
+      if (!pending) throw new HttpError(409, "Connect the storage first");
+      await provideKey(pending, text(key, "key")).catch((error) => {
+        throw new HttpError(400, errorMessage(error));
+      });
+      pending = null;
+      return { connected: "joined" };
+    }],
+    // Hooks, the icon if wanted, then the first sync
+    ["/api/setup/finish", async ({ icon }) => {
+      if (!(await loadConfig())?.initialized) throw new HttpError(409, "Connect the storage first");
+      await installHooks();
+      if (icon === true) {
+        // The icon serving this page keeps running; otherwise start one
+        if (options.hostedByTray) await setStartAtLogin(true);
+        else await (await import("./tray.js")).setUpTray();
+      }
+      return { result: await sync() };
+    }],
   ]);
 
   async function handle(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
@@ -241,15 +299,11 @@ export async function startDashboardServer(config: Config, port = 0): Promise<Da
 }
 
 /**
- * Serve a page on this machine for choosing which conversations sync here
+ * Serve a page on this machine for choosing which conversations sync here; before
+ * claude-sync is set up, it connects the storage
  */
 export async function dashboard(options: DashboardOptions): Promise<void> {
   const config = await loadConfig();
-
-  if (!config?.initialized) {
-    console.log(chalk.red("Error: claude-sync not initialized. Run `claude-sync init` first."));
-    process.exit(1);
-  }
 
   const port = Number(options.port ?? 0);
   if (!Number.isInteger(port) || port < 0 || port > 65535) {

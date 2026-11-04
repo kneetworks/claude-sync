@@ -13,11 +13,13 @@ export interface TrayStatus {
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
-export function trayStatus(syncing: boolean, lastSync: LastSync | null): TrayStatus {
+export function trayStatus(syncing: boolean, lastSync: LastSync | null, setUp = true): TrayStatus {
   let state: TrayState = "idle";
   let status = "Not synced yet";
 
-  if (syncing) {
+  if (!setUp) {
+    return { state: "attention", status: "Not set up yet", tooltip: "claude-sync: click to connect your storage" };
+  } else if (syncing) {
     [state, status] = ["syncing", "Syncing…"];
   } else if (lastSync?.error) {
     [state, status] = ["attention", "The last sync failed"];

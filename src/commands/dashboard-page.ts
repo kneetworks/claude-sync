@@ -251,6 +251,25 @@ const PAGE = String.raw`<!doctype html>
   dialog p { margin: 0 0 18px; color: var(--muted); }
   .dialog-buttons { display: flex; justify-content: flex-end; gap: 8px; }
   .primary.danger { background: #c42b1c; color: #fff; }
+  [hidden] { display: none !important; }
+  .setup { max-width: 640px; padding: 12px 24px 32px; display: flex; flex-direction: column; gap: 16px; }
+  .setup > p { margin: 0; color: var(--muted); }
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .field > span { font-weight: 600; font-size: 13px; }
+  .field > small { color: var(--muted); font-size: 12.5px; }
+  .field input {
+    font: inherit; color: var(--text); background: var(--surface-2);
+    border: 1px solid var(--border); border-radius: 6px; padding: 7px 10px;
+  }
+  .setup .choices { margin: 0; }
+  .buttons { display: flex; gap: 8px; flex-wrap: wrap; }
+  .guide { background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; font-size: 13px; }
+  .guide strong { display: block; margin-bottom: 4px; }
+  .guide ol { margin: 0; padding-left: 20px; color: var(--muted); }
+  .guide li { margin: 4px 0; }
+  .guide li strong { display: inline; margin: 0; color: var(--text); }
+  .guide a { color: var(--accent); }
+  .toggle { display: flex; align-items: center; gap: 12px; }
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { animation: none !important; transition: none !important; }
   }
@@ -304,6 +323,14 @@ const PAGE = String.raw`<!doctype html>
       <p class="hint">How claude-sync works on this computer.</p>
     </header>
     <div class="scroll" id="settings"></div>
+  </section>
+
+  <section class="view" id="view-setup" aria-labelledby="setup-title" hidden>
+    <header class="view-head">
+      <h2 id="setup-title">Connect your storage</h2>
+      <p class="hint" id="setup-hint"></p>
+    </header>
+    <div class="scroll"><div class="setup" id="setup"></div></div>
   </section>
   </main>
 </div>
@@ -926,18 +953,203 @@ const PAGE = String.raw`<!doctype html>
     $("count").textContent = String(conversations.length);
   }
 
-  function show(view) {
+  let view = "conversations";
+  function show(name) {
+    view = name;
     for (const item of document.querySelectorAll(".nav-item")) {
-      if (item.dataset.view === view) item.setAttribute("aria-current", "page");
+      if (item.dataset.view === name) item.setAttribute("aria-current", "page");
       else item.removeAttribute("aria-current");
     }
-    $("view-conversations").hidden = view !== "conversations";
-    $("view-settings").hidden = view !== "settings";
+    $("view-conversations").hidden = name !== "conversations";
+    $("view-settings").hidden = name !== "settings";
+  }
+
+  // First-time setup. It runs to Finish even though the server counts claude-sync as
+  // set up as soon as the storage is connected.
+  let settingUp = false;
+  let setupStep = "storage";
+  let setupShown = "";
+  let storageKind = "git";
+  let otherFolders = false;
+
+  const SETUP_TEXT = {
+    storage: ["Connect your storage", "Where your encrypted conversations are kept. Use a private repository or bucket; only encrypted files are stored there."],
+    key: ["Enter your encryption key", "This storage already has synced conversations, so this computer needs the key they were encrypted with."],
+    folders: ["Where are your projects?", "Conversations are restored into the matching project folder, so /resume finds them."],
+    backup: ["Back up your encryption key", "Your storage was empty, so this computer made a new encryption key."],
+    finish: ["Finish setting up", "Almost there."],
+  };
+  const STORAGE_KINDS = [
+    ["git", "Git repository", "A private repository on GitHub, GitLab or any git host. The simplest choice."],
+    ["s3", "Amazon S3", "A bucket, with this computer's AWS credentials."],
+    ["gcs", "Google Cloud Storage", "A bucket, through its S3-compatible API with an HMAC key."],
+    ["r2", "Cloudflare R2", "A bucket, with an R2 API token."],
+    ["s3-custom", "Other S3-compatible", "MinIO and other storage with an S3 API."],
+  ];
+  const link = (href, text) => el("a", { href, target: "_blank", rel: "noreferrer", text });
+  // Credentials for buckets come from the standard AWS places, which a login item sees too
+  const AWS_KEYS = "Save them in ~/.aws/credentials (aws configure does this), or set them as AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY in your system's environment variables.";
+  const STORAGE_GUIDE = {
+    git: ["Don't have one yet?", () => [
+      ["Create a ", el("strong", { text: "private" }), " repository, for example on ", link("https://github.com/new", "GitHub"), " or ", link("https://gitlab.com/projects/new", "GitLab"), ". Any name works, such as claude-sessions, and it can stay empty."],
+      ["Copy its HTTPS address, the one ending in .git, and paste it below."],
+      ["Connect. The first time, git may open a window to sign in to your git host."],
+    ]],
+    s3: ["Setting it up", () => [
+      ["Create a bucket in the ", link("https://s3.console.aws.amazon.com/s3/bucket/create", "AWS console"), ", keeping public access blocked."],
+      ["Create an access key that can read and write it. " + AWS_KEYS],
+      ["Enter the bucket's name and region below, and connect."],
+    ]],
+    gcs: ["Setting it up", () => [
+      ["Create a bucket in the ", link("https://console.cloud.google.com/storage/create-bucket", "Google Cloud console"), "."],
+      ["Under Cloud Storage, Settings, Interoperability, create an HMAC key. " + AWS_KEYS],
+      ["Enter the bucket's name below, and connect."],
+    ]],
+    r2: ["Setting it up", () => [
+      ["In the ", link("https://dash.cloudflare.com/?to=/:account/r2/overview", "Cloudflare dashboard"), ", create an R2 bucket."],
+      ["Create an R2 API token that can read and write it, which gives an access key ID and a secret. " + AWS_KEYS],
+      ["Enter the bucket's name below, and your account ID from the R2 overview page, then connect."],
+    ]],
+    "s3-custom": ["Setting it up", () => [
+      ["Create a bucket and an access key with your provider. " + AWS_KEYS],
+      ["Enter the bucket's name, your provider's endpoint URL and region below, and connect."],
+    ]],
+  };
+  const STORAGE_FIELDS = {
+    git: [["url", "Repository URL", "https://github.com/you/claude-sessions-private.git"]],
+    s3: [["bucket", "Bucket", "my-bucket"], ["region", "Region", "us-east-1"]],
+    gcs: [["bucket", "Bucket", "my-bucket"]],
+    r2: [["bucket", "Bucket", "my-bucket"], ["accountId", "Cloudflare account ID", ""]],
+    "s3-custom": [["bucket", "Bucket", "my-bucket"], ["endpoint", "Endpoint URL", "https://minio.example.com"], ["region", "Region", "us-east-1"]],
+  };
+
+  const field = (label, input, note) => el("label", { class: "field" }, [el("span", { text: label }), input, note ? el("small", { text: note }) : null]);
+  const primary = (label, onclick) => el("button", { type: "button", class: "primary", text: label, onclick });
+  const next = (step) => { setupStep = step; setupShown = ""; render(); };
+
+  async function setupAction(label, path, body, after) {
+    try {
+      state = await working(label, () => api(path, body));
+      after(state);
+    } catch (error) {
+      toast(error.message);
+    }
+    setupShown = "";
+    render();
+  }
+
+  function storageStep() {
+    const kinds = STORAGE_KINDS.map(([value, title, note]) => {
+      const input = el("input", { type: "radio", name: "kind", value });
+      input.checked = value === storageKind;
+      input.addEventListener("change", () => { storageKind = value; setupShown = ""; render(); });
+      return el("label", {}, [input, el("span", {}, [el("strong", { text: title }), el("small", { text: note })])]);
+    });
+    const inputs = {};
+    const fields = STORAGE_FIELDS[storageKind].map(([name, label, placeholder]) => {
+      inputs[name] = el("input", { type: "text", placeholder, spellcheck: "false", "aria-label": label });
+      return field(label, inputs[name]);
+    });
+    const connect = () => {
+      const body = { kind: storageKind };
+      for (const [name, input] of Object.entries(inputs)) body[name] = input.value;
+      setupAction("Connecting…", "/api/setup/connect", body, (data) => {
+        setupStep = { new: "backup", joined: "folders", key: "key" }[data.connected] || "storage";
+      });
+    };
+    const [guideTitle, guideSteps] = STORAGE_GUIDE[storageKind];
+    const guide = el("div", { class: "guide" }, [
+      el("strong", { text: guideTitle }),
+      el("ol", {}, guideSteps().map((parts) => el("li", {}, parts))),
+    ]);
+    return [el("div", { class: "choices" }, kinds), guide, ...fields, el("div", { class: "buttons" }, [primary("Connect", connect)])];
+  }
+
+  function keyStep() {
+    const key = el("input", { type: "password", autocomplete: "off", spellcheck: "false", "aria-label": "Encryption key" });
+    const go = () => setupAction("Checking the key…", "/api/setup/key", { key: key.value }, () => { setupStep = "folders"; });
+    return [
+      field("Encryption key", key, "On a computer that's set up, open Settings and choose Copy key, or run claude-sync key export there."),
+      el("div", { class: "buttons" }, [primary("Continue", go)]),
+    ];
+  }
+
+  function foldersStep() {
+    const intro = el("p", { text: "Are your projects in the same place, relative to your home folder, as on your other computers? For example ~/Workspace/app on each of them." });
+    if (!otherFolders) {
+      return [intro, el("div", { class: "buttons" }, [
+        primary("Yes, the same", () => next("finish")),
+        button("No, somewhere else", () => { otherFolders = true; setupShown = ""; render(); }),
+      ])];
+    }
+    const other = el("input", { type: "text", placeholder: "~/Workspace", spellcheck: "false", "aria-label": "Folder on your other computers" });
+    const here = el("input", { type: "text", placeholder: "D:\\Projects", spellcheck: "false", "aria-label": "Folder on this computer" });
+    const add = () => setupAction("Saving…", "/api/folders/add", { other: other.value, here: here.value }, () => { setupStep = "finish"; });
+    return [
+      intro,
+      field("Projects folder on your other computers", other),
+      field("The same folder on this computer", here),
+      el("div", { class: "buttons" }, [primary("Continue", add), button("Back", () => { otherFolders = false; setupShown = ""; render(); })]),
+    ];
+  }
+
+  function backupStep() {
+    return [
+      el("p", { text: "Keep a copy somewhere safe, such as a password manager. Your other computers need it to read your conversations, and without it nobody can." }),
+      el("div", { class: "buttons" }, [button("Copy key", copyKey), primary("Continue", () => next("finish"))]),
+    ];
+  }
+
+  function finishStep() {
+    const icon = el("input", { type: "checkbox", class: "switch", "aria-label": "Start claude-sync when you log in" });
+    icon.checked = true;
+    const finish = () => setupAction("Syncing for the first time…", "/api/setup/finish", { icon: icon.checked }, (data) => {
+      settingUp = false;
+      const result = data.result;
+      toast(result && result.error ? "Set up, but the first sync failed: " + result.error : "claude-sync is set up");
+    });
+    return [
+      el("p", { text: "Claude Code will sync whenever a session starts and ends. The first sync runs now and can take a while." }),
+      el("label", { class: "toggle" }, [icon, el("span", {
+        text: state.hostedByTray ? "Start claude-sync when you log in" : "Show the claude-sync icon in the notification area, and start it when you log in",
+      })]),
+      el("div", { class: "buttons" }, [primary("Finish", finish)]),
+    ];
+  }
+
+  function renderSetup() {
+    $("status").replaceChildren(
+      el("span", { class: "big " + (busy ? "accent spin" : "warn"), icon: busy ? "sync" : "warn" }),
+      el("div", {}, [
+        el("h2", { text: typeof busy === "string" ? busy : "Not set up yet" }),
+        el("p", { text: "Connect your storage to start syncing." }),
+      ])
+    );
+    // A reload while the key is awaited picks up there
+    if (setupStep === "storage" && state.setup && state.setup.needsKey) setupStep = "key";
+    const shown = setupStep + "|" + storageKind + "|" + otherFolders;
+    if (shown === setupShown) return;
+    setupShown = shown;
+    const steps = { storage: storageStep, key: keyStep, folders: foldersStep, backup: backupStep, finish: finishStep };
+    $("setup-title").textContent = SETUP_TEXT[setupStep][0];
+    $("setup-hint").textContent = SETUP_TEXT[setupStep][1];
+    $("setup").replaceChildren(...steps[setupStep]());
   }
 
   function render() {
     if (!state) return;
     $("machine").textContent = "Conversations on " + state.machine;
+    if (state.setup) settingUp = true;
+    document.querySelector(".nav").hidden = settingUp;
+    $("sync-now").hidden = settingUp;
+    $("view-setup").hidden = !settingUp;
+    if (settingUp) {
+      $("view-conversations").hidden = true;
+      $("view-settings").hidden = true;
+      renderSetup();
+      return;
+    }
+    show(view);
     renderStatus();
     renderTree();
     renderTotals();

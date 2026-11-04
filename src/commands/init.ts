@@ -3,8 +3,8 @@ import inquirer from "inquirer";
 import ora from "ora";
 import chalk from "chalk";
 import { generateKey, importKey, keyExists, saveKey } from "../crypto/keys.js";
-import { decryptWithKey } from "../crypto/encrypt.js";
 import { initGitBackend } from "../backends/git.js";
+import { checkKey, S3_ENDPOINTS, sampleOf } from "../utils/storage-setup.js";
 import { getBackend, type Backend, type RemoteFile } from "../backends/index.js";
 import { saveConfig } from "../utils/config.js";
 import { expandHome } from "../utils/sessions.js";
@@ -20,26 +20,6 @@ interface InitOptions {
   key?: string;
 }
 
-// Common S3-compatible endpoints
-const S3_ENDPOINTS = {
-  gcs: "https://storage.googleapis.com",
-  r2: "https://{account_id}.r2.cloudflarestorage.com", // User needs to replace {account_id}
-};
-
-/**
- * True if a pasted key can decrypt a sample from the storage, else what's wrong with it
- */
-export function checkKey(input: string, sample: Buffer): true | string {
-  const key = Buffer.from(input.trim(), "base64");
-  if (key.length !== 32) return "That isn't a 256-bit key in base64";
-  try {
-    decryptWithKey(sample, key);
-    return true;
-  } catch {
-    return "That key can't read the sessions in this storage";
-  }
-}
-
 /**
  * Ask for the key the storage's sessions were encrypted with. It's checked against
  * the smallest of them, so a wrong key is caught now rather than at the first sync.
@@ -52,8 +32,7 @@ async function promptForKey(remote: Backend, files: RemoteFile[]): Promise<void>
       chalk.dim(", or from wherever you keep it.\n")
   );
 
-  const smallest = files.reduce((a, b) => ((b.size ?? Infinity) < (a.size ?? Infinity) ? b : a));
-  const sample = await remote.get(smallest.path);
+  const sample = await sampleOf(remote, files);
   const { key } = await inquirer.prompt([
     {
       type: "password",
@@ -200,7 +179,9 @@ export async function init(options: InitOptions): Promise<void> {
           region: "auto",
         };
         console.log(
-          chalk.dim("\nNote: Set GOOGLE_APPLICATION_CREDENTIALS or use gcloud auth\n")
+          chalk.dim(
+            "\nNote: Create an HMAC key (Cloud Storage > Settings > Interoperability) and set it as\nAWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY\n"
+          )
         );
       } else if (choice === "r2") {
         // Cloudflare R2

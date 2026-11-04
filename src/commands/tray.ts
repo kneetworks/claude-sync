@@ -96,12 +96,8 @@ function log(message: string): Promise<void> {
  * when a sync is running or needs attention, and opens the dashboard
  */
 export async function tray(options: TrayOptions): Promise<void> {
+  // Before setup, the icon offers it: its dashboard connects the storage
   const config = await loadConfig();
-
-  if (!config?.initialized) {
-    console.log(chalk.red("Error: claude-sync not initialized. Run `claude-sync init` first."));
-    process.exit(1);
-  }
 
   if (options.startup === false) {
     const removed = await disableAutostart();
@@ -128,11 +124,11 @@ export async function tray(options: TrayOptions): Promise<void> {
   }
 }
 
-async function runTray(config: Config): Promise<void> {
+async function runTray(config: Config | null): Promise<void> {
   // Starting at login and by hand at once shouldn't show two icons
   if (await runningTray()) return;
 
-  const server = await startDashboardServer(config);
+  const server = await startDashboardServer(config, 0, { hostedByTray: true });
   await saveTrayInfo({ pid: process.pid, url: server.url });
 
   const helper = trayHelper(TRAY_DIR);
@@ -170,7 +166,8 @@ async function runTray(config: Config): Promise<void> {
 
   let sent = "";
   const update = async () => {
-    const status = trayStatus(server.isSyncing() || (await isSyncRunning()), await loadLastSync());
+    const setUp = !!(await loadConfig())?.initialized;
+    const status = trayStatus(server.isSyncing() || (await isSyncRunning()), await loadLastSync(), setUp);
     const line = JSON.stringify(status);
     if (line === sent || !child.stdin.writable) return;
     child.stdin.write(`${line}\n`);

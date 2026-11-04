@@ -1,7 +1,7 @@
 // Installs claude-sync from this folder: builds it, makes `claude-sync` a command in
-// every shell, connects it to your storage the first time, and turns on automatic
-// sync with the notification area icon. The install-* scripts in the folder above
-// run it; running it again updates claude-sync.
+// every shell, and turns on automatic sync with the notification area icon, whose
+// dashboard connects your storage the first time. The install-* scripts in the folder
+// above run it; running it again updates claude-sync.
 import { spawnSync } from "child_process";
 import fs from "fs";
 import path from "path";
@@ -93,31 +93,40 @@ try {
     fs.rmSync(path.join(ROOT, file), { force: true });
   }
 
-  if (!readState("config.json")?.initialized) {
-    step("Connecting your storage");
-    claudeSync(["init"]);
-  }
+  const setUp = !!readState("config.json")?.initialized;
+  const sync = () => {
+    step("Syncing");
+    try {
+      claudeSync(["sync"]);
+    } catch {
+      console.log("\nThe sync didn't finish; Claude Code will try again when a session starts.");
+    }
+  };
 
-  step("Syncing");
-  try {
-    claudeSync(["sync"]);
-  } catch {
-    console.log("\nThe sync didn't finish; Claude Code will try again when a session starts.");
-  }
-
+  // Hooks do nothing until the storage is connected, so they can go in first
   step("Turning on automatic sync");
   claudeSync(["install", "--tray"]);
+  if (setUp) sync();
 
-  if (OPEN) {
-    // `install` starts the icon in the background: open its dashboard once it's up
-    for (let i = 0; i < 50 && !trayRunning(); i++) await sleep(100);
-    if (trayRunning()) claudeSync(["dashboard"]);
+  // `install` starts the icon in the background; its dashboard connects the storage
+  // the first time
+  for (let i = 0; i < 50 && !trayRunning(); i++) await sleep(100);
+  if (trayRunning()) {
+    if (OPEN) claudeSync(["dashboard"]);
+    console.log(
+      setUp
+        ? "\nclaude-sync is set up. It syncs whenever a Claude Code session starts and ends, and its icon" +
+            "\nshows when it's syncing. Run this installer again to update claude-sync."
+        : "\nAlmost done: connect your storage in the claude-sync window" +
+            (OPEN ? " that just opened." : ", which its icon opens.")
+    );
+  } else if (!setUp) {
+    // No icon here (no desktop): connect the storage in this window instead
+    step("Connecting your storage");
+    claudeSync(["init"]);
+    sync();
+    console.log("\nclaude-sync is set up. It syncs whenever a Claude Code session starts and ends.");
   }
-
-  console.log(
-    "\nclaude-sync is set up. It syncs whenever a Claude Code session starts and ends, and its icon" +
-      "\nshows when it's syncing. Run this installer again to update claude-sync."
-  );
 } catch (error) {
   console.error(`\nSetup stopped: ${error.message}`);
   process.exitCode = 1;
