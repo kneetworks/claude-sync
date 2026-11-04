@@ -8,6 +8,7 @@ import { status } from "./commands/status.js";
 import { keyExport, keyImport } from "./commands/key.js";
 import { folderAdd, folderRemove } from "./commands/folder.js";
 import { dashboard } from "./commands/dashboard.js";
+import { tray } from "./commands/tray.js";
 
 const program = new Command();
 
@@ -65,6 +66,14 @@ program
   .option("--port <port>", "Port to listen on (default: any free port)")
   .option("--no-open", "Print the link instead of opening the browser")
   .action(dashboard);
+
+program
+  .command("tray")
+  .description("Show claude-sync in the notification area (menu bar on macOS)")
+  .option("--startup", "Also start it automatically when you log in")
+  .option("--no-startup", "Stop starting it automatically when you log in")
+  .option("--foreground", "Run in this terminal instead of in the background")
+  .action(tray);
 
 const key = program.command("key").description("Back up or restore the encryption key");
 

@@ -34,7 +34,8 @@ pnpm start status   # Test status command
 | Component | Purpose | Location |
 |-----------|---------|----------|
 | CLI | Command-line interface | `src/cli.ts` |
-| Commands | init, sync (push/pull), install, status, key, folder, dashboard | `src/commands/` |
+| Commands | init, sync (push/pull), install, status, key, folder, dashboard, tray | `src/commands/` |
+| Tray | Notification area icon scripts per OS (PowerShell, osascript, python3), start at login | `src/tray/` |
 | Backends | Git, S3-compatible | `src/backends/` |
 | Crypto | AES-256-GCM encryption | `src/crypto/` |
 | Utils | Config, project path mapping, manifest, merge rules, lock, selective sync, dashboard data | `src/utils/` |
@@ -47,6 +48,9 @@ pnpm start status   # Test status command
 ├── key             # Encryption key (256-bit)
 ├── manifest.json   # Per remote path: last synced version, plaintext hash, local stat
 ├── remote.json     # What the storage held at the last sync (for the dashboard)
+├── last-sync.json  # Outcome of the latest sync, whoever ran it (for the dashboard and tray)
+├── tray.json       # Running tray icon: pid and dashboard link
+├── tray/           # The tray helper script for this OS, and tray.log
 ├── conflicts/      # Remote copies set aside when both machines changed a file
 └── repo/           # Git backend local clone (a cache, reset to origin/main each sync)
     └── projects/   # Encrypted files: @home-<project>/<path inside project>.enc

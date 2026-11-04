@@ -316,7 +316,7 @@ const PAGE = String.raw`<!doctype html>
     render();
     try {
       state = await api("/api/sync", {});
-      const result = state.lastResult;
+      const result = state.result;
       if (result.busy) toast("Another sync is running. Try again when it finishes.");
       else if (result.error) toast("Sync failed: " + result.error);
       else toast("Synced: pulled " + result.pulled + ", pushed " + plural(result.pushed, "file"));
@@ -340,7 +340,7 @@ const PAGE = String.raw`<!doctype html>
     const count = (name) => conversations.filter((c) => c.state === name).length;
     const pending = count("upload") + count("download");
     const tooBig = count("too-big");
-    const result = state.lastResult;
+    const result = state.lastSync;
     let icon, tone, title;
 
     if (busy || state.syncing) [icon, tone, title] = ["sync", "accent spin", "Syncing…"];
@@ -355,9 +355,8 @@ const PAGE = String.raw`<!doctype html>
         : "Not synced yet · " + state.storage,
     ];
     if (result && !busy) {
-      if (result.busy) lines.push("Another sync was running when you pressed Sync now.");
-      else if (result.error) lines.push(result.error);
-      else lines.push("Last sync from here: pulled " + result.pulled + ", pushed " + plural(result.pushed, "file") + " (" + when(result.at) + ")");
+      if (result.error) lines.push(result.error);
+      else lines.push("Last sync " + when(result.at).replace(/^(Today|Yesterday)/, (day) => day.toLowerCase()) + ": pulled " + result.pulled + ", pushed " + plural(result.pushed, "file"));
     }
 
     const body = el("div", {}, [el("h2", { text: title })].concat(lines.map((text) => el("p", { text }))));

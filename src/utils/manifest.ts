@@ -4,6 +4,7 @@ import { homedir } from "os";
 
 const MANIFEST_FILE = path.join(homedir(), ".claude-sync", "manifest.json");
 const REMOTE_FILE = path.join(homedir(), ".claude-sync", "remote.json");
+const LAST_SYNC_FILE = path.join(homedir(), ".claude-sync", "last-sync.json");
 
 /**
  * What this machine last synced for one remote path
@@ -28,6 +29,19 @@ export interface RemoteIndex {
   /** When the storage was listed (ms since epoch) */
   listedAt: number;
   files: Record<string, { v: string; size?: number }>;
+}
+
+/**
+ * How the latest sync on this machine went, whether a hook, the dashboard or the
+ * command line ran it
+ */
+export interface LastSync {
+  /** When it finished (ms since epoch) */
+  at: number;
+  pulled: number;
+  pushed: number;
+  warnings: string[];
+  error?: string;
 }
 
 async function readJson<T>(file: string): Promise<T | null> {
@@ -59,4 +73,12 @@ export async function loadRemoteIndex(): Promise<RemoteIndex | null> {
 
 export async function saveRemoteIndex(index: RemoteIndex): Promise<void> {
   await writeJson(REMOTE_FILE, index);
+}
+
+export async function loadLastSync(): Promise<LastSync | null> {
+  return readJson<LastSync>(LAST_SYNC_FILE);
+}
+
+export async function saveLastSync(lastSync: LastSync): Promise<void> {
+  await writeJson(LAST_SYNC_FILE, lastSync);
 }

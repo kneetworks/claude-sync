@@ -104,7 +104,21 @@ This opens a page in your browser, much like the "choose folders" panel of a des
 - New conversations sync unless you uncheck their whole project. Checking a single conversation inside an unchecked project syncs just that one.
 - The choice is stored in this machine's `~/.claude-sync/config.json`, and takes effect at the next sync (or press **Sync now**).
 
-The page is served on `127.0.0.1` only and needs the one-time link printed in the terminal, so other websites and other users can't reach it. Press Ctrl+C to stop it.
+The page is served on `127.0.0.1` only and needs the one-time link printed in the terminal, so other websites and other users can't reach it. It opens in a window of its own when Chrome, Edge, Chromium or Brave is installed, otherwise in your default browser. Press Ctrl+C to stop it.
+
+### Notification area icon
+
+```bash
+claude-sync tray --startup
+```
+
+This puts a cloud icon in the notification area (the menu bar on macOS) and starts it again whenever you log in, like a desktop sync app:
+
+- A blue badge shows while a sync runs, including the ones Claude Code's hooks start. A red badge means the last sync failed or had warnings, such as a transcript too large for the storage.
+- Click the icon to open the dashboard. Its menu (right-click on Windows) has **Sync now** and **Quit**.
+- `claude-sync tray` starts it once without adding it to your login items, and `claude-sync tray --no-startup` removes it from them.
+
+It only uses what each OS already has: PowerShell on Windows, `osascript` on macOS (11 or later for the cloud symbols), and `python3` with GTK and Ayatana AppIndicator on Linux (`sudo apt install gir1.2-ayatanaappindicator3-0.1` on Debian and Ubuntu; GNOME also needs the AppIndicator extension). On Windows 11, a new icon starts in the hidden overflow (^): drag it onto the taskbar to keep it in sight. Problems are logged to `~/.claude-sync/tray/tray.log`.
 
 ## Commands
 
@@ -117,6 +131,7 @@ The page is served on `127.0.0.1` only and needs the one-time link printed in th
 | `claude-sync install` | Add hooks to Claude Code for automatic sync |
 | `claude-sync status` | Show configuration and sync status |
 | `claude-sync dashboard` | Choose which conversations sync on this machine, in your browser (`--port`, `--no-open`) |
+| `claude-sync tray` | Show claude-sync in the notification area (`--startup` to also start it at login, `--no-startup` to stop that) |
 | `claude-sync folder add <other> <here>` | Keep projects from `<other>` on your other machines (e.g. `~/Workspace`) in `<here>` on this one |
 | `claude-sync folder remove <other>` | Undo `folder add` |
 | `claude-sync key export` | Print the encryption key as base64 |

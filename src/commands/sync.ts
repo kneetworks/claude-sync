@@ -9,6 +9,7 @@ import { getBackend, type Backend } from "../backends/index.js";
 import { loadConfig } from "../utils/config.js";
 import {
   loadManifest,
+  saveLastSync,
   saveManifest,
   saveRemoteIndex,
   type RemoteIndex,
@@ -320,6 +321,8 @@ async function run(options: SyncOptions, push: boolean): Promise<SyncResult> {
       process.exitCode = 1;
     }
   } finally {
+    // For the dashboard and tray icon, which don't see syncs run by hooks
+    await saveLastSync({ at: Date.now(), pulled, pushed, warnings, error }).catch(() => {});
     await release();
   }
 

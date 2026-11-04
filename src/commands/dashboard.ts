@@ -1,13 +1,15 @@
 import http from "http";
 import type { AddressInfo } from "net";
 import { randomBytes, timingSafeEqual } from "crypto";
-import { spawn } from "child_process";
 import chalk from "chalk";
-import { getBackend } from "../backends/index.js";
+import { getBackend, type Config } from "../backends/index.js";
 import { loadConfig, saveConfig } from "../utils/config.js";
 import { loadDashboardState } from "../utils/conversations.js";
 import { isSyncRunning } from "../utils/lock.js";
+import { loadLastSync } from "../utils/manifest.js";
+import { openApp } from "../utils/open.js";
 import { selectConversation, selectProject } from "../utils/selection.js";
+import { runningTray } from "../tray/instance.js";
 import { syncSilently, type SyncResult } from "./sync.js";
 import { dashboardPage } from "./dashboard-page.js";
 
@@ -15,6 +17,15 @@ interface DashboardOptions {
   port?: string;
   /** False with --no-open */
   open?: boolean;
+}
+
+export interface DashboardServer {
+  /** The page's address, with the access token */
+  url: string;
+  /** Sync now, or wait for the sync this server already started */
+  sync(): Promise<SyncResult>;
+  /** True while a sync started here is running */
+  isSyncing(): boolean;
 }
 
 const MAX_BODY = 64 * 1024;
@@ -53,42 +64,17 @@ async function readJson(req: http.IncomingMessage): Promise<Record<string, unkno
   throw new HttpError(400, "Expected a JSON object");
 }
 
-function openBrowser(url: string): void {
-  const [command, args] =
-    process.platform === "win32"
-      ? ["cmd", ["/c", "start", "", url]]
-      : process.platform === "darwin"
-        ? ["open", [url]]
-        : ["xdg-open", [url]];
-
-  spawn(command, args, { stdio: "ignore", detached: true, windowsHide: true })
-    .on("error", () => console.log(chalk.dim("  Couldn't open a browser; open the link yourself")))
-    .unref();
-}
-
 /**
- * Serve a page on this machine for choosing which conversations sync here
+ * Serve the dashboard on this machine only. Used by `claude-sync dashboard` and by
+ * the tray icon, which keeps it running in the background.
  */
-export async function dashboard(options: DashboardOptions): Promise<void> {
-  const config = await loadConfig();
-
-  if (!config?.initialized) {
-    console.log(chalk.red("Error: claude-sync not initialized. Run `claude-sync init` first."));
-    process.exit(1);
-  }
-
-  const port = Number(options.port ?? 0);
-  if (!Number.isInteger(port) || port < 0 || port > 65535) {
-    console.log(chalk.red(`Error: invalid port ${options.port}`));
-    process.exit(1);
-  }
-
+export async function startDashboardServer(config: Config, port = 0): Promise<DashboardServer> {
   const maxFileSize = await getBackend(config)
     .then((backend) => backend.maxFileSize)
     .catch(() => undefined);
 
-  // Only someone with the printed link can use the API: another site open in the
-  // browser can't send the header, and the Host check stops DNS rebinding
+  // Only someone with the link can use the API: another site open in the browser
+  // can't send the header, and the Host check stops DNS rebinding
   const token = randomBytes(24).toString("hex");
   const expected = Buffer.from(token);
   const validToken = (value: unknown) =>
@@ -98,7 +84,7 @@ export async function dashboard(options: DashboardOptions): Promise<void> {
   let allowedHosts = new Set<string>();
 
   let syncing: Promise<SyncResult> | null = null;
-  let lastResult: (SyncResult & { at: number }) | null = null;
+  const sync = () => (syncing ??= syncSilently().finally(() => (syncing = null)));
 
   const state = async () => {
     // Re-read each time: `claude-sync folder add` may have changed the config meanwhile
@@ -106,7 +92,7 @@ export async function dashboard(options: DashboardOptions): Promise<void> {
     return {
       ...(await loadDashboardState(current, maxFileSize)),
       syncing: !!syncing || (await isSyncRunning()),
-      lastResult,
+      lastSync: await loadLastSync(),
     };
   };
 
@@ -157,9 +143,8 @@ export async function dashboard(options: DashboardOptions): Promise<void> {
     }
 
     if (req.method === "POST" && pathname === "/api/sync") {
-      syncing ??= syncSilently().finally(() => (syncing = null));
-      lastResult = { ...(await syncing), at: Date.now() };
-      return sendJson(res, 200, await state());
+      const result = await sync();
+      return sendJson(res, 200, { ...(await state()), result });
     }
 
     throw new HttpError(404, "Not found");
@@ -171,19 +156,58 @@ export async function dashboard(options: DashboardOptions): Promise<void> {
     );
   });
 
-  server.on("error", (error) => {
-    console.log(chalk.red(`Error: couldn't start the dashboard: ${error.message}`));
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(port, "127.0.0.1", () => resolve());
+  });
+
+  const { port: actual } = server.address() as AddressInfo;
+  allowedHosts = new Set([`127.0.0.1:${actual}`, `localhost:${actual}`]);
+
+  return {
+    url: `http://127.0.0.1:${actual}/#${token}`,
+    sync,
+    isSyncing: () => !!syncing,
+  };
+}
+
+/**
+ * Serve a page on this machine for choosing which conversations sync here
+ */
+export async function dashboard(options: DashboardOptions): Promise<void> {
+  const config = await loadConfig();
+
+  if (!config?.initialized) {
+    console.log(chalk.red("Error: claude-sync not initialized. Run `claude-sync init` first."));
     process.exit(1);
-  });
+  }
 
-  server.listen(port, "127.0.0.1", () => {
-    const { port: actual } = server.address() as AddressInfo;
-    allowedHosts = new Set([`127.0.0.1:${actual}`, `localhost:${actual}`]);
-    const url = `http://127.0.0.1:${actual}/#${token}`;
+  const port = Number(options.port ?? 0);
+  if (!Number.isInteger(port) || port < 0 || port > 65535) {
+    console.log(chalk.red(`Error: invalid port ${options.port}`));
+    process.exit(1);
+  }
 
-    console.log(chalk.bold("\nclaude-sync dashboard\n"));
-    console.log(`  ${url}\n`);
-    console.log(chalk.dim("  Press Ctrl+C to stop\n"));
-    if (options.open !== false) openBrowser(url);
-  });
+  // The tray icon already serves the dashboard
+  const tray = options.port ? null : await runningTray();
+  if (tray) {
+    if (options.open === false) console.log(`\n  ${tray.url}\n`);
+    else await openApp(tray.url);
+    return;
+  }
+
+  let server: DashboardServer;
+  try {
+    server = await startDashboardServer(config, port);
+  } catch (error) {
+    console.log(chalk.red(`Error: couldn't start the dashboard: ${errorMessage(error)}`));
+    process.exit(1);
+  }
+
+  console.log(chalk.bold("\nclaude-sync dashboard\n"));
+  console.log(`  ${server.url}\n`);
+  console.log(chalk.dim("  Press Ctrl+C to stop\n"));
+  if (options.open !== false && !(await openApp(server.url))) {
+    console.log(chalk.dim("  Couldn't open a browser; open the link yourself\n"));
+  }
 }
