@@ -115,8 +115,8 @@ try {
     if (OPEN) claudeSync(["dashboard"]);
     console.log(
       setUp
-        ? "\nclaude-sync is set up. It syncs whenever a Claude Code session starts and ends, and its icon" +
-            "\nshows when it's syncing. Run this installer again to update claude-sync."
+        ? "\nclaude-sync is set up. It syncs whenever a Claude Code session starts and ends, and when you" +
+            "\nstep away from one, and its icon shows when it's syncing. Run this installer again to update it."
         : "\nAlmost done: connect your storage in the claude-sync window" +
             (OPEN ? " that just opened." : ", which its icon opens.")
     );

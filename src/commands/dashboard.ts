@@ -131,6 +131,9 @@ export async function startDashboardServer(
       settings: {
         startAtLogin: await isAutostartEnabled(),
         hooks: await hooksStatus(),
+        syncWhenIdle: current.syncWhenIdle !== false,
+        // Syncing when idle is the icon's job
+        iconRunning: !!options.hostedByTray || !!(await runningTray()),
         folders: Object.entries(current.folders ?? {}).map(([other, here]) => ({ other, here })),
         conflicts: conflicts.length,
         canCompact: current.backend === "git",
@@ -180,6 +183,10 @@ export async function startDashboardServer(
       await setStartAtLogin(enabled);
     }],
     ["/api/hooks", () => installHooks()],
+    ["/api/idle-sync", async ({ enabled }) => {
+      if (typeof enabled !== "boolean") throw new HttpError(400, "Expected { enabled }");
+      await saveConfig({ ...(await requireConfig()), syncWhenIdle: enabled });
+    }],
     // The page puts it on the clipboard without showing it
     ["/api/key", async () => ({ key: await exportKey() })],
     ["/api/folders/add", async ({ other, here }) => {

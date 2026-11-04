@@ -40,6 +40,8 @@ export interface Config {
   folders?: Record<string, string>;
   /** Projects and conversations this machine doesn't sync */
   selection?: Selection;
+  /** False to stop the icon syncing conversations once they go quiet */
+  syncWhenIdle?: boolean;
 }
 
 export async function getBackend(config: Config): Promise<Backend> {

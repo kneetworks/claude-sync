@@ -23,6 +23,7 @@ function machine(dir: string, name: string) {
     return String(result.stdout);
   };
   return {
+    config: () => JSON.parse(fs.readFileSync(path.join(home, ".claude-sync", "config.json"), "utf-8")),
     transcript: path.join(home, ".claude", "projects", encode(path.join(home, "code", "app")), `${SESSION}.jsonl`),
     run(args: string[], input?: string): string {
       return check(spawnSync(process.execPath, [CLI, ...args], { env, input, encoding: "utf-8" }), args.join(" "));
@@ -184,5 +185,21 @@ describe.skipIf(!fs.existsSync(CLI))("two machines", () => {
 
     a.call("syncSilently", [KEY]);
     expect(contents(a.transcript)).toEqual(["message 1", "message 2"]);
+  });
+
+  it("notice a conversation that changed but hasn't synced, for syncing when idle", { timeout: 120_000 }, () => {
+    const { a } = setUp("idle");
+    expect(a.call("lastUnsyncedChange", a.config())).toBe(0);
+
+    // Left open: written to, with no session end to sync it
+    fs.appendFileSync(a.transcript, `${message(3)}\n`);
+    expect(a.call("lastUnsyncedChange", a.config())).toBe(fs.statSync(a.transcript).mtimeMs);
+
+    // A project that doesn't sync here has nothing to wait for
+    const unselected = { ...a.config(), selection: { projects: { "@home-code-app": false }, conversations: {} } };
+    expect(a.call("lastUnsyncedChange", unselected)).toBe(0);
+
+    a.run(["sync"]);
+    expect(a.call("lastUnsyncedChange", a.config())).toBe(0);
   });
 });

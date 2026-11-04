@@ -708,6 +708,15 @@ const PAGE = String.raw`<!doctype html>
     });
     startup.checked = s.startAtLogin;
 
+    const idle = el("input", {
+      type: "checkbox", class: "switch", role: "switch", "aria-label": "Sync when you step away",
+      onchange: (event) => act("/api/idle-sync", { enabled: event.target.checked },
+        event.target.checked ? "Quiet conversations will sync on their own" : "Conversations will sync when sessions start and end"),
+    });
+    idle.checked = s.syncWhenIdle;
+    const idleText = "Conversations quiet for 5 minutes sync without waiting for their session to end, so one you leave open here is ready on your other computers." +
+      (s.iconRunning ? "" : " The claude-sync icon does this, and it isn't running.");
+
     const hooks = s.hooks;
     const hooksText = hooks.state === "missing"
       ? "Off: Claude Code doesn't sync when sessions start and end. Repair turns it on."
@@ -736,6 +745,7 @@ const PAGE = String.raw`<!doctype html>
       setting("Start when you log in", [el("p", { text: "Shows the claude-sync icon every time you log in." })], startup),
       setting("Sync with Claude Code", [el("p", { class: hooksOk ? "" : "warn-text", text: hooksText })],
         hooksOk ? null : button("Repair", () => act("/api/hooks", {}, "Claude Code will sync when sessions start and end"))),
+      setting("Sync when you step away", [el("p", { text: idleText })], idle),
       setting("Encryption key", [el("p", { text: "Your other computers need it to read your conversations. It's copied without being shown." })],
         button("Copy key", copyKey)),
       folderSetting(s.folders),

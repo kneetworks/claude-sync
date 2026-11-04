@@ -2,6 +2,7 @@ import path from "path";
 import { describe, it, expect } from "vitest";
 import { autostartFile, desktopEntry, launchAgent } from "../autostart.js";
 import { trayHelper } from "../helpers.js";
+import { IDLE_MS, idleSyncDue, RETRY_MS } from "../idle.js";
 import { TRAY_ICONS } from "../icons.js";
 import { trayStatus } from "../status.js";
 
@@ -32,6 +33,24 @@ describe("trayStatus", () => {
     expect(status.status).toMatch(/^Up to date · synced /);
     expect(status.tooltip.length).toBeLessThanOrEqual(63);
     expect(trayStatus(false, null).status).toBe("Not synced yet");
+  });
+});
+
+describe("idleSyncDue", () => {
+  const now = 10 * IDLE_MS;
+  const fresh = { handled: 0, retryAt: 0 };
+
+  it("waits until changes have been quiet for a while", () => {
+    expect(idleSyncDue(0, fresh, now)).toBe(false);
+    expect(idleSyncDue(now - IDLE_MS + 1000, fresh, now)).toBe(false);
+    expect(idleSyncDue(now - IDLE_MS, fresh, now)).toBe(true);
+  });
+
+  it("syncs a change once, and backs off after a failure", () => {
+    const quiet = now - IDLE_MS;
+    expect(idleSyncDue(quiet, { handled: quiet, retryAt: 0 }, now)).toBe(false);
+    expect(idleSyncDue(quiet, { handled: quiet - 1, retryAt: 0 }, now)).toBe(true);
+    expect(idleSyncDue(quiet, { handled: 0, retryAt: now + RETRY_MS }, now)).toBe(false);
   });
 });
 

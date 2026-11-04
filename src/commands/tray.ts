@@ -14,14 +14,18 @@ import { disableAutostart, enableAutostart } from "../tray/autostart.js";
 import { TRAY_UNSUPPORTED, trayHelper } from "../tray/helpers.js";
 import { TRAY_ICONS } from "../tray/icons.js";
 import { clearTrayInfo, runningTray, saveTrayInfo } from "../tray/instance.js";
+import { idleSyncDue, RETRY_MS, type IdleSync } from "../tray/idle.js";
 import { trayStatus } from "../tray/status.js";
 import { startDashboardServer } from "./dashboard.js";
+import { lastUnsyncedChange } from "./sync.js";
 
 const TRAY_DIR = path.join(homedir(), ".claude-sync", "tray");
 const LOG_FILE = path.join(TRAY_DIR, "tray.log");
 const CLI = fileURLToPath(new URL("../cli.js", import.meta.url));
 // Often enough to show a hook's sync while it runs, cheap enough to go unnoticed
 const POLL_MS = 2000;
+// How often to look for conversations that went quiet without their session ending
+const IDLE_CHECK_MS = 60_000;
 
 interface TrayOptions {
   /** Run in this process instead of starting a background one */
@@ -142,11 +146,13 @@ async function runTray(config: Config | null): Promise<void> {
   const child = spawn(helper.command, helper.args, { stdio: "pipe", windowsHide: true });
 
   let timer: NodeJS.Timeout | undefined;
+  let idleTimer: NodeJS.Timeout | undefined;
   let quitting = false;
   const quit = async (code = 0) => {
     if (quitting) return;
     quitting = true;
     clearInterval(timer);
+    clearInterval(idleTimer);
     child.stdin.end();
     await clearTrayInfo(process.pid);
     process.exit(code);
@@ -185,7 +191,26 @@ async function runTray(config: Config | null): Promise<void> {
     }
   });
 
+  // Hooks sync when a session starts and ends; a conversation left open, say when
+  // you walk away from this computer, syncs once it has been quiet for a while
+  const idle: IdleSync = { handled: 0, retryAt: 0 };
+  const syncWhenIdle = async () => {
+    const config = await loadConfig();
+    if (!config?.initialized || config.syncWhenIdle === false || server.isSyncing()) return;
+    const lastChange = await lastUnsyncedChange(config);
+    if (!idleSyncDue(lastChange, idle)) return;
+    const result = await server.sync();
+    // A hook's sync was running: look again next time
+    if (result.busy) return;
+    if (result.error) idle.retryAt = Date.now() + RETRY_MS;
+    else idle.handled = lastChange;
+  };
+
   timer = setInterval(() => void update(), POLL_MS);
+  idleTimer = setInterval(
+    () => void syncWhenIdle().catch((error) => log(`Sync when idle: ${(error as Error).message}`)),
+    IDLE_CHECK_MS
+  );
   void update();
 
   for (const signal of ["SIGINT", "SIGTERM"] as const) process.on(signal, () => void quit());

@@ -27,6 +27,8 @@ It shows how things stand at a glance, including syncs Claude Code starts when a
 
 Click it to open the dashboard. Its menu shows the status, **Sync now** and **Quit**.
 
+It also syncs a conversation you leave open once it has been quiet for 5 minutes, so walking away from one computer without closing Claude Code doesn't keep it from your others.
+
 ## Choose what syncs
 
 Every project and conversation on this machine or in your storage, with its latest message, size and state: up to date, waiting to upload or download, only in storage, or not syncing here.
@@ -51,6 +53,7 @@ Delete one conversation from its row, or every conversation with no message for 
 - **Storage**: a link to your repository or bucket.
 - **Start when you log in**: the icon at every login.
 - **Sync with Claude Code**: whether the hooks are installed and still work, with **Repair** if not.
+- **Sync when you step away**: the icon syncing conversations that have been quiet for 5 minutes, on by default.
 - **Encryption key**: copied for your other machine, never shown on screen.
 - **Project folders**: [folder mappings](../README.md#restoring-into-the-right-project) between machines.
 - **Conflict copies**: copies set aside when two machines changed the same file.

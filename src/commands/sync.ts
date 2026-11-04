@@ -5,7 +5,7 @@ import { homedir } from "os";
 import ora from "ora";
 import chalk from "chalk";
 import { encrypt, decryptBuffer, ENCRYPTION_OVERHEAD } from "../crypto/encrypt.js";
-import { getBackend, type Backend } from "../backends/index.js";
+import { getBackend, type Backend, type Config } from "../backends/index.js";
 import { loadConfig } from "../utils/config.js";
 import {
   loadManifest,
@@ -386,6 +386,24 @@ export async function pull(options: SyncOptions): Promise<void> {
  */
 export function syncSilently(restore?: string[]): Promise<SyncResult> {
   return run({ silent: true, restore }, true);
+}
+
+/**
+ * When the newest change that hasn't synced yet was written (ms since the epoch), or
+ * 0 when everything this machine syncs is up to date. Reads only file stats, so the
+ * icon can check it often.
+ */
+export async function lastUnsyncedChange(config: Config): Promise<number> {
+  const manifest = await loadManifest();
+  let newest = 0;
+  for (const file of await findLocalFiles(homedir(), toFolderMappings(config.folders))) {
+    if (!isSelected(file.remotePath, config.selection)) continue;
+    const stat = await fs.stat(file.absPath).catch(() => null);
+    const entry = manifest[file.remotePath];
+    if (!stat || (entry && entry.size === stat.size && entry.mtime === stat.mtimeMs)) continue;
+    newest = Math.max(newest, stat.mtimeMs);
+  }
+  return newest;
 }
 
 export interface CompactResult {
