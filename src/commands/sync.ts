@@ -301,7 +301,17 @@ async function run(options: SyncOptions, push: boolean): Promise<SyncResult> {
           }
           // Remote extends this copy; a later sync pulls it once the session is closed
           if (resolution === "take-remote") continue;
-          if (resolution === "conflict") {
+          if (resolution === "conflict" && isTranscript(file.remotePath)) {
+            const { take, keepOther } = pickTranscript(data, remote);
+            // The conversation went on elsewhere and this copy only gained bookkeeping
+            // (typically a window left open here, now closing): don't upload it over
+            // the newer one, which a later sync pulls once the session is closed
+            if (take === "remote") continue;
+            if (keepOther) {
+              const saved = await saveConflict(file.remotePath, remote);
+              warnings.push(`Conflict on ${file.remotePath}: pushed the copy with the latest message, remote copy saved to ${saved}`);
+            }
+          } else if (resolution === "conflict") {
             const saved = await saveConflict(file.remotePath, remote);
             warnings.push(`Conflict on ${file.remotePath}: pushed the local copy, remote copy saved to ${saved}`);
           }

@@ -158,7 +158,7 @@ Every sync pulls before it pushes, so a push never silently overwrites another m
 - For any other file both sides changed, the local copy is kept and the other copy is saved to `~/.claude-sync/conflicts/`.
 - A project's memory index (`memory/MEMORY.md`) is merged line by line instead, so memories added on both machines are all listed.
 
-The session that is currently open is never overwritten by a hook; it is reconciled on the next sync after it closes. Deletions are not synced, so Claude Code's cleanup of old transcripts on one machine doesn't remove them anywhere else.
+The session that is currently open is never overwritten by a hook, nor uploaded by one over a copy with a more recent message; it is reconciled on the next sync after it closes. Deletions are not synced, so Claude Code's cleanup of old transcripts on one machine doesn't remove them anywhere else.
 
 ## Commands
 
