@@ -31,7 +31,8 @@ export function trayHelper(dir: string, platform: NodeJS.Platform = process.plat
   }
   if (platform === "darwin") {
     const file = path.join(dir, "tray.js");
-    return { file, script: MACOS, command: "/usr/bin/osascript", args: ["-l", "JavaScript", file] };
+    const script = MACOS.replace("__TRAY_DIR__", JSON.stringify(dir));
+    return { file, script, command: "/usr/bin/osascript", args: ["-l", "JavaScript", file] };
   }
   const file = path.join(dir, "tray.py");
   return { file, script: LINUX, command: "python3", args: [file] };
@@ -49,58 +50,14 @@ function Send([string]$message) {
   $stdout.Flush()
 }
 
-function Test-LightTaskbar {
-  try {
-    $theme = Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize'
-    return $theme.SystemUsesLightTheme -eq 1
-  } catch {
-    return $false
-  }
-}
-
-# A solid cloud in the taskbar's text colour, with a blue sync badge while syncing
-# and a red "!" badge when something needs attention
-function New-StateIcon([string]$state) {
-  $bitmap = New-Object System.Drawing.Bitmap 32, 32
-  $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
-  $graphics.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
-  $graphics.TextRenderingHint = [System.Drawing.Text.TextRenderingHint]::AntiAliasGridFit
-  $center = New-Object System.Drawing.StringFormat
-  $center.Alignment = [System.Drawing.StringAlignment]::Center
-  $center.LineAlignment = [System.Drawing.StringAlignment]::Center
-
-  $color = if (Test-LightTaskbar) { [System.Drawing.Color]::Black } else { [System.Drawing.Color]::White }
-  $cloud = New-Object System.Drawing.SolidBrush $color
-  $graphics.FillEllipse($cloud, 3, 14, 12, 12)
-  $graphics.FillEllipse($cloud, 7.5, 5.5, 17, 17)
-  $graphics.FillEllipse($cloud, 17.5, 13, 13, 13)
-  $graphics.FillRectangle($cloud, 9, 19, 15, 7)
-
-  if ($state -ne 'idle') {
-    # Clear a ring around the badge so it reads at 16 pixels
-    $graphics.CompositingMode = [System.Drawing.Drawing2D.CompositingMode]::SourceCopy
-    $graphics.FillEllipse((New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::Transparent)), 15, 15, 19, 19)
-    $graphics.CompositingMode = [System.Drawing.Drawing2D.CompositingMode]::SourceOver
-    $badge = New-Object System.Drawing.RectangleF 17, 17, 15, 15
-    if ($state -eq 'syncing') {
-      $fill = [System.Drawing.Color]::FromArgb(0, 120, 212)
-      $mark = [string][char]0xE895
-      $font = New-Object System.Drawing.Font('Segoe MDL2 Assets', 9, [System.Drawing.GraphicsUnit]::Pixel)
-    } else {
-      $fill = [System.Drawing.Color]::FromArgb(196, 43, 28)
-      $mark = '!'
-      $font = New-Object System.Drawing.Font('Segoe UI', 11, [System.Drawing.FontStyle]::Bold, [System.Drawing.GraphicsUnit]::Pixel)
-    }
-    $graphics.FillEllipse((New-Object System.Drawing.SolidBrush $fill), $badge)
-    $graphics.DrawString($mark, $font, [System.Drawing.Brushes]::White, $badge, $center)
-  }
-
-  $graphics.Dispose()
-  return [System.Drawing.Icon]::FromHandle($bitmap.GetHicon())
-}
-
+# The icon for each state, written next to this script by claude-sync. Read into
+# memory, so the files aren't locked while the icon runs.
 $icons = @{}
-foreach ($state in 'idle', 'syncing', 'attention') { $icons[$state] = New-StateIcon $state }
+foreach ($state in 'idle', 'syncing', 'attention') {
+  $png = [System.IO.File]::ReadAllBytes((Join-Path $PSScriptRoot "icon-$state.png"))
+  $bitmap = New-Object System.Drawing.Bitmap (New-Object System.IO.MemoryStream (, $png))
+  $icons[$state] = [System.Drawing.Icon]::FromHandle($bitmap.GetHicon())
+}
 
 $status = New-Object System.Windows.Forms.ToolStripMenuItem 'Starting...'
 $status.Enabled = $false
@@ -173,12 +130,9 @@ function send(message) {
   stdout.writeData($(message + "\n").dataUsingEncoding($.NSUTF8StringEncoding));
 }
 
-const SYMBOLS = {
-  idle: "icloud",
-  syncing: "arrow.triangle.2.circlepath.icloud",
-  attention: "exclamationmark.icloud",
-};
-const TEXT = { idle: "☁︎", syncing: "⟳", attention: "⚠︎" };
+// The icon for each state, written next to this script by claude-sync
+const DIR = __TRAY_DIR__;
+const TEXT = { idle: "claude-sync", syncing: "claude-sync ⟳", attention: "claude-sync ⚠︎" };
 
 let buffer = "";
 function read(notification) {
@@ -230,18 +184,15 @@ item.setMenu(menu);
 
 function setState(state, tooltip) {
   const button = item.button;
-  let image = null;
-  try {
-    image = $.NSImage.imageWithSystemSymbolNameAccessibilityDescription(SYMBOLS[state] || SYMBOLS.idle, "claude-sync");
-  } catch (error) {
-    // Before macOS 11
-  }
+  const known = TEXT[state] ? state : "idle";
+  const image = $.NSImage.alloc.initWithContentsOfFile(DIR + "/icon-" + known + ".png");
   if (image && !image.isNil()) {
-    image.setTemplate(true);
+    // Menu bar icons are 18 points; the 64 px image keeps it sharp on Retina screens
+    image.setSize($.NSMakeSize(18, 18));
     button.setImage(image);
     button.setTitle("");
   } else {
-    button.setTitle(TEXT[state] || TEXT.idle);
+    button.setTitle(TEXT[known]);
   }
   button.setToolTip(tooltip || "claude-sync");
 }
@@ -259,6 +210,7 @@ app.run;
 // GNOME needs the "AppIndicator and KStatusNotifierItem Support" extension
 const LINUX = String.raw`# claude-sync tray icon (see src/tray/helpers.ts)
 import json
+import os
 import sys
 
 try:
@@ -282,11 +234,9 @@ except (ImportError, ValueError) as error:
     )
     sys.exit(3)
 
-ICONS = {
-    "idle": "weather-overcast-symbolic",
-    "syncing": "emblem-synchronizing-symbolic",
-    "attention": "dialog-warning-symbolic",
-}
+# The icon for each state, written next to this script by claude-sync
+DIR = os.path.dirname(os.path.abspath(__file__))
+ICONS = dict((state, os.path.join(DIR, "icon-%s.png" % state)) for state in ("idle", "syncing", "attention"))
 
 
 def send(message):

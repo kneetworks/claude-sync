@@ -1,9 +1,11 @@
+import { TRAY_ICONS } from "../tray/icons.js";
+
 /**
  * The dashboard's one page: plain HTML, CSS and JS, so it needs no build step.
  * It is a single String.raw literal, so the code inside avoids backticks and "${".
  */
 export function dashboardPage(nonce: string): string {
-  return PAGE.replace("__NONCE__", nonce);
+  return PAGE.replace("__NONCE__", nonce).replaceAll("__ICON__", TRAY_ICONS.idle[64]);
 }
 
 const PAGE = String.raw`<!doctype html>
@@ -12,6 +14,7 @@ const PAGE = String.raw`<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>claude-sync</title>
+<link rel="icon" type="image/png" href="data:image/png;base64,__ICON__">
 <style>
   :root {
     color-scheme: light dark;
@@ -56,7 +59,7 @@ const PAGE = String.raw`<!doctype html>
   .app { max-width: 940px; margin: 0 auto; padding: 24px 16px 48px; }
   .top { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
   .brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
-  .brand svg { width: 36px; height: 36px; color: var(--accent); flex: none; }
+  .brand img { width: 36px; height: 36px; flex: none; }
   h1 { font-size: 20px; font-weight: 600; margin: 0; }
   .brand p { margin: 0; color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   button { font: inherit; }
@@ -149,10 +152,7 @@ const PAGE = String.raw`<!doctype html>
 <div class="app">
   <header class="top">
     <div class="brand">
-      <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <path d="M9 25h15a6 6 0 0 0 .8-11.9A8.5 8.5 0 0 0 8.4 11 7 7 0 0 0 9 25z"/>
-        <path d="M19.5 16.5a4 4 0 0 0-7-1.5M12 13v2.2h2.2M12.5 19.5a4 4 0 0 0 7 1.5M20 23v-2.2h-2.2"/>
-      </svg>
+      <img src="data:image/png;base64,__ICON__" alt="">
       <div>
         <h1>claude-sync</h1>
         <p id="machine">Loading…</p>
@@ -514,6 +514,14 @@ const PAGE = String.raw`<!doctype html>
   if (!token) {
     fatal("Open the link printed in the terminal by claude-sync dashboard.");
     return;
+  }
+
+  // Clicking the tray icon again opens a fresh window: the older ones close, so there's
+  // only ever one (a browser may refuse to close a tab it didn't open by script)
+  if ("BroadcastChannel" in window) {
+    const windows = new BroadcastChannel("claude-sync-dashboard");
+    windows.onmessage = (event) => { if (event.data === "opened") window.close(); };
+    windows.postMessage("opened");
   }
 
   $("sync-now").addEventListener("click", syncNow);

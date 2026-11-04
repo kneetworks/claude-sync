@@ -35,7 +35,7 @@ pnpm start status   # Test status command
 |-----------|---------|----------|
 | CLI | Command-line interface | `src/cli.ts` |
 | Commands | init, sync (push/pull), install, status, key, folder, dashboard, tray | `src/commands/` |
-| Tray | Notification area icon scripts per OS (PowerShell, osascript, python3), start at login | `src/tray/` |
+| Tray | Notification area icon scripts per OS (PowerShell, osascript, python3), start at login; icon PNGs generated from `assets/tray-icon.svg` by `scripts/render-tray-icons.ps1` | `src/tray/` |
 | Installers | Double-click setup per OS; all run the same build, install and setup steps | `install-*`, `scripts/setup.mjs` |
 | Backends | Git, S3-compatible | `src/backends/` |
 | Crypto | AES-256-GCM encryption | `src/crypto/` |

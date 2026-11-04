@@ -79,15 +79,15 @@ When it asks for the key, `init` also asks whether this machine keeps its projec
 
 ### The icon
 
-The cloud icon works like a desktop sync app's:
+The icon works like a desktop sync app's, and its small cloud shows how things stand:
 
-| Icon | Meaning |
-|------|---------|
-| Cloud | Up to date |
-| Cloud with a blue badge | Syncing, whether Claude Code or you started it |
-| Cloud with a red badge | The last sync failed or skipped something, such as a transcript too large for the storage. Open the dashboard to see why. |
+| Cloud | Meaning |
+|-------|---------|
+| White | Up to date |
+| Blue | Syncing, whether Claude Code or you started it |
+| Red | The last sync failed or skipped something, such as a transcript too large for the storage. Open the dashboard to see why. |
 
-Click it to open the dashboard. Its menu (right-click on Windows) shows the status, **Sync now** and **Quit**. On Windows 11, a new icon starts in the hidden overflow (^): drag it onto the taskbar to keep it in sight.
+Click it to open the dashboard; clicking again brings up a fresh dashboard window and closes the old one. Its menu (right-click on Windows) shows the status, **Sync now** and **Quit**. On Windows 11, a new icon starts in the hidden overflow (^): drag it onto the taskbar to keep it in sight.
 
 ### Continuing a conversation on another machine
 
@@ -351,6 +351,8 @@ claude-sync install
 ```
 
 Repeat these after each build.
+
+The tray icon is drawn from `assets/tray-icon.svg`. After changing it, run `powershell -NoProfile -ExecutionPolicy Bypass -STA -File scripts/render-tray-icons.ps1` on Windows to regenerate the PNGs in `src/tray/icons.ts`; the cloud (the path with `id="badge"`) is recoloured for each state.
 
 ## Roadmap
 

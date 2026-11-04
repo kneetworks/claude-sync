@@ -12,6 +12,7 @@ import { loadLastSync } from "../utils/manifest.js";
 import { openApp } from "../utils/open.js";
 import { disableAutostart, enableAutostart } from "../tray/autostart.js";
 import { TRAY_UNSUPPORTED, trayHelper } from "../tray/helpers.js";
+import { TRAY_ICONS } from "../tray/icons.js";
 import { clearTrayInfo, runningTray, saveTrayInfo } from "../tray/instance.js";
 import { trayStatus } from "../tray/status.js";
 import { startDashboardServer } from "./dashboard.js";
@@ -137,6 +138,11 @@ async function runTray(config: Config): Promise<void> {
   const helper = trayHelper(TRAY_DIR);
   await fs.mkdir(TRAY_DIR, { recursive: true });
   await fs.writeFile(helper.file, helper.script);
+  // The helper loads the icon for each state from next to it
+  const size = process.platform === "win32" ? 32 : 64;
+  for (const [state, pngs] of Object.entries(TRAY_ICONS)) {
+    await fs.writeFile(path.join(TRAY_DIR, `icon-${state}.png`), Buffer.from(pngs[size], "base64"));
+  }
   const child = spawn(helper.command, helper.args, { stdio: "pipe", windowsHide: true });
 
   let timer: NodeJS.Timeout | undefined;

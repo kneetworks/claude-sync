@@ -2,6 +2,7 @@ import path from "path";
 import { describe, it, expect } from "vitest";
 import { autostartFile, desktopEntry, launchAgent } from "../autostart.js";
 import { trayHelper } from "../helpers.js";
+import { TRAY_ICONS } from "../icons.js";
 import { trayStatus } from "../status.js";
 
 const synced = { at: Date.now(), pulled: 1, pushed: 2, warnings: [] };
@@ -47,6 +48,20 @@ describe("trayHelper", () => {
 
   it("writes JavaScript that parses", () => {
     expect(() => new Function(trayHelper("/t", "darwin").script)).not.toThrow();
+  });
+});
+
+describe("TRAY_ICONS", () => {
+  it("has a PNG of each size for each state", () => {
+    const signature = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+    for (const state of ["idle", "syncing", "attention"] as const) {
+      for (const size of [32, 64] as const) {
+        const png = Buffer.from(TRAY_ICONS[state][size], "base64");
+        expect(png.subarray(0, 4)).toEqual(signature);
+        // Width and height, big-endian, in the IHDR chunk
+        expect([png.readUInt32BE(16), png.readUInt32BE(20)]).toEqual([size, size]);
+      }
+    }
   });
 });
 
