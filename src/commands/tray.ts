@@ -58,10 +58,28 @@ export async function startTray(): Promise<boolean> {
 }
 
 /**
- * Start the icon at every login, and now
+ * Stop the running icon, and wait (up to 3 seconds) until it's gone
+ */
+async function stopTray(): Promise<void> {
+  const running = await runningTray();
+  if (!running) return;
+  try {
+    process.kill(running.pid);
+  } catch {
+    return;
+  }
+  for (let i = 0; i < 30 && (await runningTray()); i++) {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+}
+
+/**
+ * Start the icon at every login, and now. A running icon is restarted, since it may
+ * be an older version than the one being installed.
  */
 export async function setUpTray(): Promise<void> {
   await enableAutostart(process.execPath, CLI);
+  await stopTray();
   await startTray();
 }
 

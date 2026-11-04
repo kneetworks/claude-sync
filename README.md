@@ -24,7 +24,25 @@ Claude Code stores conversations locally. When you switch machines, your convers
 
 ## Getting Started
 
-You need [Node.js](https://nodejs.org) 18 or later, and [Git](https://git-scm.com) if your storage is a Git repository. The commands are the same in PowerShell, Command Prompt, Git Bash, and macOS and Linux terminals.
+You need [Node.js](https://nodejs.org) 18 or later, and [Git](https://git-scm.com) if your storage is a Git repository.
+
+### With the installer
+
+Download this repository (**Code → Download ZIP**, then unzip it) or clone it, then open the installer for your system:
+
+| System | Installer |
+|--------|-----------|
+| Windows | Double-click `install-windows.cmd` |
+| macOS | Double-click `install-macos.command` |
+| Linux | Run `./install-linux.sh`, or double-click it and choose **Run in Terminal** |
+
+It builds claude-sync and makes `claude-sync` a command. Then it asks where to keep your sessions (and, on another machine, for your encryption key and where your projects are), runs the first sync, and puts claude-sync in the notification area, where it starts every time you log in. To update claude-sync, get the new version of the folder and run the installer again.
+
+The first time, your system may warn about running a script from the internet: on Windows, choose **More info → Run anyway**; on macOS, allow it in **System Settings → Privacy & Security**.
+
+### From the command line
+
+The commands are the same in PowerShell, Command Prompt, Git Bash, and macOS and Linux terminals.
 
 **1. Install claude-sync**
 
@@ -38,11 +56,10 @@ npm install -g @chronicideas/claude-sync
 claude-sync init --git https://github.com/yourusername/claude-sessions-private
 ```
 
-Every other machine needs that same key, or it couldn't read anything already synced:
+Every other machine needs that same key, or it couldn't read anything already synced. `init` asks for it (get it with `claude-sync key export` on a machine that's set up), or you can pass it:
 
 ```bash
-claude-sync key export                                   # on a machine that's set up
-claude-sync init --git <same-repo> --key <base64-key>    # on the new one
+claude-sync init --git <same-repo> --key <base64-key>
 ```
 
 Keep the key somewhere safe, such as a password manager: it's the only way to read your synced conversations.
@@ -56,7 +73,7 @@ claude-sync install
 
 The first sync uploads or downloads everything, so it can take a while. `install` makes Claude Code sync whenever a session starts and ends, and puts claude-sync in the notification area (the menu bar on macOS), where it starts again every time you log in. From then on you rarely need the terminal.
 
-If this machine keeps its projects in a different folder from your other machines (say `D:\Projects` instead of `~/Workspace`), tell claude-sync before the first sync: see [Restoring into the right project](#restoring-into-the-right-project).
+When it asks for the key, `init` also asks whether this machine keeps its projects in a different folder from your other machines (say `D:\Projects` instead of `~/Workspace`). With `--key`, set that up yourself before the first sync: see [Restoring into the right project](#restoring-into-the-right-project).
 
 ## Using claude-sync
 
@@ -324,7 +341,7 @@ npx pnpm@9.15.0 test
 node dist/cli.js status
 ```
 
-`node dist/cli.js` only works from this folder. To use your build as `claude-sync` in every shell, install it the way a release is installed, then point the hooks and the icon at that copy:
+`node dist/cli.js` only works from this folder. To use your build as `claude-sync` in every shell, run the [installer](#with-the-installer), or install it the way a release is installed and point the hooks and the icon at that copy:
 
 ```bash
 npm pack                                            # prints the file name, e.g. chronicideas-claude-sync-0.1.0.tgz
