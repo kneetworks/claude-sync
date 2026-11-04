@@ -20,9 +20,38 @@ Claude Code stores conversations locally. When you switch machines, your convers
 - **Zero trust** - We never see your conversations or encryption keys
 - **Automatic** - Hooks into Claude Code's session lifecycle
 - **Incremental** - Only files changed since the last sync are uploaded
-- **Optional desktop app** - A notification area icon and a dashboard, on Windows, macOS and Linux
+- **Desktop app or terminal** - A notification area icon and a dashboard on Windows, macOS and Linux, or just the command line
 
 ## Quick Start
+
+You need [Node.js](https://nodejs.org) 18 or later, and [Git](https://git-scm.com) to keep your sessions in a Git repository.
+
+### Desktop app
+
+The easiest way to start: claude-sync runs like a desktop sync app. An icon in the notification area (the menu bar on macOS) shows when it's syncing, and a dashboard connects your storage, chooses which conversations sync on each machine and cleans up old ones.
+
+Download this repository (**Code → Download ZIP**, or `git clone`) and double-click the installer for your system:
+
+| Windows | macOS | Linux |
+|---------|-------|-------|
+| `install-windows.cmd` | `install-macos.command` | `./install-linux.sh` |
+
+It installs claude-sync, turns on syncing with Claude Code, and opens the dashboard to connect your storage, with steps for creating one. From then on your conversations sync on their own.
+
+Or with npm, then click the icon to connect your storage:
+
+```bash
+npm install -g @chronicideas/claude-sync
+claude-sync install --tray
+```
+
+[![The claude-sync dashboard](docs/images/dashboard.png)](docs/dashboard.md)
+
+**[See the dashboard and icon →](docs/dashboard.md)**
+
+### Terminal only
+
+For a server, a machine without a desktop, or if you'd rather not have the icon:
 
 ```bash
 # Install
@@ -43,34 +72,15 @@ claude-sync install --global
 # Done! Sessions will sync automatically
 ```
 
-## Dashboard and notification area icon
-
-Rather not use the terminal? claude-sync can work like a desktop sync app: an icon in the notification area (the menu bar on macOS) shows when it's syncing, and a dashboard lets you connect your storage, choose which conversations sync on each machine, clean up old ones and change settings. It runs on **Windows, macOS and Linux**, with nothing to install beyond claude-sync.
-
-[![The claude-sync dashboard](docs/images/dashboard.png)](docs/dashboard.md)
-
-**[See the dashboard and icon →](docs/dashboard.md)**
+Both work the same underneath, so you can add the icon later with `claude-sync install --tray`.
 
 ## How It Works
 
-```
-┌─────────────────┐         ┌─────────────────┐
-│  Machine A      │         │  Machine B      │
-│                 │         │                 │
-│  Claude Code    │         │  Claude Code    │
-│       ↓         │         │       ↑         │
-│  Session ends   │         │  Session starts │
-│       ↓         │         │       ↑         │
-│  Encrypt (AES)  │         │  Decrypt        │
-│       ↓         │         │       ↑         │
-└───────┬─────────┘         └───────┴─────────┘
-        │                           │
-        ↓                           ↑
-┌─────────────────────────────────────────────┐
-│         Your Private Storage                 │
-│   (Git / S3 / GCS / R2 - encrypted only)    │
-└─────────────────────────────────────────────┘
-```
+![A conversation on Machine A is encrypted and pushed to your private storage, then pulled and decrypted on Machine B](docs/images/how-it-works.png)
+
+Before anything leaves a machine, claude-sync encrypts it with your key, and it decrypts what it downloads, so your storage (Git, S3, GCS or R2) only ever holds encrypted files. Every sync pulls the other machines' changes first, then pushes this machine's, so it works the same in both directions.
+
+Claude Code's hooks run a sync when a session starts and when it ends, and `/resume` on the other machine picks the conversation up. The desktop app also syncs a conversation left open once it has been quiet for 5 minutes, and whenever you click **Sync now**.
 
 ### What gets synced
 
@@ -105,7 +115,7 @@ The session that is currently open is never overwritten by a hook, nor uploaded 
 | Command | Description |
 |---------|-------------|
 | `claude-sync init` | Set up storage backend and encryption key (`--key <base64>` to reuse your other machine's) |
-| `claude-sync install` | Add hooks to Claude Code for automatic sync |
+| `claude-sync install` | Add hooks to Claude Code for automatic sync (`--tray` also adds the icon, started at login) |
 | `claude-sync sync` | Pull remote changes, then push local changes |
 | `claude-sync push` | Same as `sync`: remote changes are always pulled first |
 | `claude-sync pull` | Pull only (`--all` also restores files deleted locally) |
@@ -162,7 +172,7 @@ claude-sync init --s3 my-bucket --endpoint https://minio.example.com --region us
 
 ### Interactive Setup
 
-Just run `claude-sync init` without flags for an interactive wizard that guides you through setup. When the storage already has synced sessions, it asks for the key they were encrypted with.
+Just run `claude-sync init` without flags for an interactive wizard that guides you through setup. When the storage already has synced sessions, it asks for the key they were encrypted with. The dashboard does the same in a window.
 
 ## Security
 
@@ -266,19 +276,18 @@ With `--hook`, claude-sync reads the session ID Claude Code passes on stdin, pri
 ## Setting Up on a New Machine
 
 1. Clone your projects to the same place relative to your home directory (e.g. `~/code/app`), or [map the folder](#restoring-into-the-right-project)
-2. Install claude-sync: `npm install -g @chronicideas/claude-sync`
-3. Initialize with the same backend and your existing key:
-   ```bash
-   # On your existing machine
-   claude-sync key export
+2. Get your encryption key from your existing machine: **Copy key** in the dashboard's Settings, or `claude-sync key export`
+3. Set up claude-sync with the same storage and that key:
+   - **Desktop app:** run the installer (or `claude-sync install --tray`) and connect the same storage in the dashboard, which then asks for the key
+   - **Terminal:**
+     ```bash
+     npm install -g @chronicideas/claude-sync
+     claude-sync init --git <same-repo> --key <base64-key>
+     claude-sync sync              # pull existing sessions
+     claude-sync install --global  # install hooks
+     ```
 
-   # On the new machine
-   claude-sync init --git <same-repo> --key <base64-key>
-   ```
-4. Pull existing sessions: `claude-sync sync`
-5. Install hooks: `claude-sync install --global`
-
-Then open Claude Code in the project and run `/resume`. Sync runs when a session starts and ends, so close a session on one machine before continuing it on another.
+Then open Claude Code in the project and run `/resume`. Sync runs when a session starts and ends, so close a session on one machine before continuing it on another. With the desktop app, a conversation left open also syncs once it's quiet, and **Sync now** syncs right away.
 
 ## Development
 
